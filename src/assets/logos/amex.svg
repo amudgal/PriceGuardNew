@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="32" viewBox="0 0 48 32" role="img" aria-labelledby="amexTitle">
+  <title id="amexTitle">American Express logo</title>
+  <rect width="48" height="32" fill="#006FCF" rx="4" />
+  <text x="24" y="20" fill="#ffffff" font-family="Arial, sans-serif" font-size="14" font-weight="700" text-anchor="middle">
+    AMEX
+  </text>
+</svg>
