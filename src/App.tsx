@@ -1,65 +1,60 @@
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
-import { Footer } from './components/Footer';
-import { Header } from './components/Header';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { Homepage } from './pages/Homepage';
-import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
+import React from "react";
+import { Header } from "./components/Header";
+import { Hero } from "./components/Hero";
+import { Features } from "./components/Features";
+import { HowItWorks } from "./components/HowItWorks";
+import { Testimonials } from "./components/Testimonials";
+import { Footer } from "./components/Footer";
+import { Login } from "./components/Login";
+import { Dashboard } from "./components/Dashboard";
 
-function ProtectedRoute() {
-  const { isAuthenticated } = useAuth();
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+type PageType = "home" | "login" | "dashboard";
+
+function App() {
+  const [currentPage, setCurrentPage] = React.useState<PageType>("home");
+  const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+
+  const handleLogin = React.useCallback(() => {
+    setCurrentPage("login");
+  }, []);
+
+  const handleBack = React.useCallback(() => {
+    setCurrentPage("home");
+  }, []);
+
+  const handleLoginSuccess = React.useCallback(() => {
+    setIsLoggedIn(true);
+    setCurrentPage("dashboard");
+  }, []);
+
+  const handleLogout = React.useCallback(() => {
+    setIsLoggedIn(false);
+    setCurrentPage("home");
+  }, []);
+
+  // Show Dashboard if logged in
+  if (isLoggedIn && currentPage === "dashboard") {
+    return <Dashboard onLogout={handleLogout} />;
   }
-  return <Outlet />;
-}
 
-function AppLayout() {
+  // Show Login page
+  if (currentPage === "login") {
+    return <Login onBack={handleBack} onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // Show Home page
   return (
-    <div className="flex min-h-screen flex-col bg-[#F9FAFB] text-[#374151]">
-      <Header />
-      <main className="flex flex-1 flex-col">
-        <Outlet />
+    <div className="min-h-screen bg-white">
+      <Header onLogin={handleLogin} />
+      <main>
+        <Hero onGetStarted={handleLogin} />
+        <Features />
+        <HowItWorks onGetStarted={handleLogin} />
+        <Testimonials />
       </main>
       <Footer />
     </div>
   );
-}
-
-function App() {
-  return (
-    <AuthProvider>
-      <BrowserRouter>
-        <ScrollManager />
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route index element={<Homepage />} />
-            <Route path="login" element={<LoginPage />} />
-            <Route element={<ProtectedRoute />}>
-              <Route path="dashboard" element={<DashboardPage />} />
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
-  );
-}
-
-function ScrollManager() {
-  const location = useLocation();
-
-  useEffect(() => {
-    if (location.hash) {
-      const element = document.querySelector(location.hash);
-      element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  }, [location]);
-
-  return null;
 }
 
 export default App;

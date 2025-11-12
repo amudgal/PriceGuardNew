@@ -1,68 +1,134 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Button } from './ui/button';
-import { useAuth } from '../context/AuthContext';
+import React from "react";
+import { Button } from "./ui/button";
+import { ShoppingCart, Menu, X } from "lucide-react";
 
-export function Header() {
-  const { isAuthenticated, logout } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+interface HeaderProps {
+  onLogin: () => void;
+}
 
-  const handlePrimaryAction = () => {
-    if (isAuthenticated) {
-      logout();
-      navigate('/', { replace: true });
-    } else {
-      navigate('/login');
-    }
-  };
+export function Header({ onLogin }: HeaderProps) {
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
-  const isDashboard = location.pathname.startsWith('/dashboard');
+  const toggleMenu = React.useCallback(() => {
+    setIsMenuOpen(prev => !prev);
+  }, []);
+
+  const closeMenu = React.useCallback(() => {
+    setIsMenuOpen(false);
+  }, []);
+
+  const handleLogin = React.useCallback(() => {
+    setIsMenuOpen(false);
+    onLogin();
+  }, [onLogin]);
 
   return (
-    <header className="border-b border-[#2D2D2D] bg-[#3D3D3D]">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link to="/" className="flex items-center gap-3 text-white">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white text-sm font-semibold text-[#E91E8C]">
-            PG
+    <header className="bg-[#3D3D3D] border-b border-[#2D2D2D] sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16">
+          {/* Logo */}
+          <div className="flex items-center space-x-2">
+            <ShoppingCart className="h-8 w-8 text-[#E91E8C]" />
+            <span className="text-xl text-white">PriceGuard</span>
           </div>
-          <div className="flex flex-col">
-            <span className="text-base font-semibold text-white">PriceGuard</span>
-            <span className="hidden text-xs text-gray-300 sm:block">Price protection made simple</span>
-          </div>
-        </Link>
-        <nav className="hidden items-center gap-6 text-sm text-gray-300 md:flex">
-          <Link className="transition hover:text-white" to="/">
-            Home
-          </Link>
-          <Link className="transition hover:text-white" to="/#features">
-            Features
-          </Link>
-          <Link className="transition hover:text-white" to="/login">
-            Plans
-          </Link>
-          {isAuthenticated ? (
-            <Link
-              className={`transition hover:text-white ${isDashboard ? 'text-white' : ''}`}
-              to="/dashboard"
+
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex items-center space-x-8">
+            <a href="#features" className="text-gray-300 hover:text-[#E91E8C] transition-colors">
+              Features
+            </a>
+            <a href="#how-it-works" className="text-gray-300 hover:text-[#E91E8C] transition-colors">
+              How It Works
+            </a>
+            <a href="#pricing" className="text-gray-300 hover:text-[#E91E8C] transition-colors">
+              Pricing
+            </a>
+            <a href="#about" className="text-gray-300 hover:text-[#E91E8C] transition-colors">
+              About
+            </a>
+          </nav>
+
+          {/* Desktop Auth Buttons */}
+          <div className="hidden md:flex items-center space-x-4">
+            <Button 
+              variant="ghost" 
+              className="text-gray-300 hover:text-white hover:bg-[#2D2D2D]"
+              onClick={onLogin}
             >
-              Dashboard
-            </Link>
-          ) : null}
-        </nav>
-        <div className="flex items-center gap-3">
-          <Button
-            className="hidden min-w-0 px-4 md:inline-flex"
-            variant="ghost"
-            onClick={() => (window.location.href = 'mailto:sales@priceguard.com')}
+              Log In
+            </Button>
+            <Button 
+              className="bg-[#E91E8C] hover:bg-[#D11A7C] text-white"
+              onClick={onLogin}
+            >
+              Get Started
+            </Button>
+          </div>
+
+          {/* Mobile menu button */}
+          <button
+            className="md:hidden"
+            onClick={toggleMenu}
           >
-            Contact sales
-          </Button>
-          <Button className="min-w-0 px-4" onClick={handlePrimaryAction}>
-            {isAuthenticated ? 'Sign out' : 'Sign in'}
-          </Button>
+            {isMenuOpen ? (
+              <X className="h-6 w-6 text-gray-300" />
+            ) : (
+              <Menu className="h-6 w-6 text-gray-300" />
+            )}
+          </button>
         </div>
+
+        {/* Mobile Navigation */}
+        {isMenuOpen && (
+          <div className="md:hidden">
+            <div className="px-2 pt-2 pb-3 space-y-1 bg-[#3D3D3D] border-t border-[#2D2D2D]">
+              <a
+                href="#features"
+                className="block px-3 py-2 text-gray-300 hover:text-[#E91E8C] transition-colors"
+                onClick={closeMenu}
+              >
+                Features
+              </a>
+              <a
+                href="#how-it-works"
+                className="block px-3 py-2 text-gray-300 hover:text-[#E91E8C] transition-colors"
+                onClick={closeMenu}
+              >
+                How It Works
+              </a>
+              <a
+                href="#pricing"
+                className="block px-3 py-2 text-gray-300 hover:text-[#E91E8C] transition-colors"
+                onClick={closeMenu}
+              >
+                Pricing
+              </a>
+              <a
+                href="#about"
+                className="block px-3 py-2 text-gray-300 hover:text-[#E91E8C] transition-colors"
+                onClick={closeMenu}
+              >
+                About
+              </a>
+              <div className="pt-3 border-t border-[#2D2D2D]">
+                <Button 
+                  variant="ghost" 
+                  className="w-full mb-2 text-gray-300 hover:text-white hover:bg-[#2D2D2D]"
+                  onClick={handleLogin}
+                >
+                  Log In
+                </Button>
+                <Button 
+                  className="w-full bg-[#E91E8C] hover:bg-[#D11A7C] text-white"
+                  onClick={handleLogin}
+                >
+                  Get Started
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </header>
   );
 }
-
