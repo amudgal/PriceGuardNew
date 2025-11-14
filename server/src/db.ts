@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from "pg";
+import { Pool, PoolClient, QueryResultRow } from "pg";
 import dotenv from "dotenv";
 import fs from "fs";
 
@@ -62,7 +62,7 @@ export function isDatabaseUnavailableError(error: unknown): boolean {
 }
 
 // Query helper function
-export async function query<T = any>(
+export async function query<T extends QueryResultRow = any>(
   text: string,
   params?: any[]
 ): Promise<{ rows: T[]; rowCount: number }> {
