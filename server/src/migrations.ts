@@ -1,4 +1,4 @@
-import { initDatabase, query } from "./db";
+import { initDatabase, query } from "./db.js";
 
 export async function runMigrations(): Promise<boolean> {
   const ready = await initDatabase();
