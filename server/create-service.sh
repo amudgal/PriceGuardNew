@@ -42,7 +42,7 @@ aws ecs create-service \
   --task-definition $LATEST_TASK_DEF \
   --desired-count 1 \
   --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_IDS],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=DISABLED}" \
+  --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_IDS],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=ENABLED}" \
   --region $AWS_REGION
 
 echo "✅ Service created successfully!"
