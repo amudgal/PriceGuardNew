@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { authenticateAccount, createAccount } from "../accountService";
-import { isDatabaseUnavailableError } from "../db";
+import { authenticateAccount, createAccount } from "../accountService.js";
+import { isDatabaseUnavailableError } from "../db.js";
+
 
 const registerSchema = z.object({
   email: z.string().email(),
