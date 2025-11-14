@@ -24,3 +24,14 @@ dist-ssr
 *.sw?
 
 build
+
+# AWS Deployment files
+server/.env
+server/*.pem
+server/rds-ca*.pem
+server/us-east-1-bundle.pem
+server/dist/
+server/node_modules/
+*.pem
+.env
+

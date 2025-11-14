@@ -8,9 +8,18 @@ import { Badge } from "./ui/badge";
 import { Check, ShoppingCart, ArrowLeft, Shield, CreditCard } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
 
+interface UserData {
+  id: string;
+  email: string;
+  firstName: string | null;
+  plan: string;
+  pastDue: boolean;
+  cardLast4: string | null;
+}
+
 interface LoginProps {
   onBack: () => void;
-  onLoginSuccess: () => void;
+  onLoginSuccess: (user?: UserData) => void;
 }
 
 const plans = [
@@ -67,6 +76,7 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
   const [selectedPlan, setSelectedPlan] = React.useState<string>("");
   const [termsAccepted, setTermsAccepted] = React.useState(false);
   const [cardNumber, setCardNumber] = React.useState("");
+  const [firstName, setFirstName] = React.useState("");
   const [signupEmail, setSignupEmail] = React.useState("");
   const [signupPassword, setSignupPassword] = React.useState("");
   const [billingZip, setBillingZip] = React.useState("");
@@ -102,6 +112,7 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
   }, []);
 
   const resetSignupForm = React.useCallback(() => {
+    setFirstName("");
     setSignupEmail("");
     setSignupPassword("");
     setCardNumber("");
@@ -164,6 +175,7 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
       const payload = {
         email: signupEmail,
         password: signupPassword,
+        firstName: firstName.trim() || null,
         creditCardToken: `tok_${sanitizedCardNumber}`,
         cardLast4: sanitizedCardNumber.slice(-4),
         billingZip: billingZip || null,
@@ -199,7 +211,7 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
         }
 
         resetSignupForm();
-        onLoginSuccess();
+        onLoginSuccess(account);
       } catch (error) {
         console.error(error);
         setSignupError(error instanceof Error ? error.message : "Registration failed. Please try again.");
@@ -212,6 +224,7 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
       billingZip,
       cardNumber,
       expiry,
+      firstName,
       onLoginSuccess,
       resetSignupForm,
       selectedPlan,
@@ -251,6 +264,8 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
         }
 
         const account = await response.json();
+        console.log("Login response:", account); // Debug: Check what we're receiving
+        console.log("firstName from API:", account?.firstName); // Debug: Check firstName specifically
         if (account?.pastDue) {
           alert(
             `Your account is marked past due. Please update your payment method ending in ${account.cardLast4 ?? "****"}.`
@@ -259,7 +274,7 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
 
         setLoginEmail("");
         setLoginPassword("");
-        onLoginSuccess();
+        onLoginSuccess(account);
       } catch (error) {
         console.error(error);
         setLoginError(error instanceof Error ? error.message : "Login failed. Please try again.");
@@ -318,7 +333,14 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <Label htmlFor="firstName">First Name</Label>
-                            <Input id="firstName" placeholder="John" />
+                            <Input 
+                              id="firstName" 
+                              name="firstName"
+                              placeholder="John" 
+                              value={firstName}
+                              onChange={(e) => setFirstName(e.target.value)}
+                              required
+                            />
                           </div>
                           <div>
                             <Label htmlFor="lastName">Last Name</Label>
