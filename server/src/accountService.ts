@@ -1,5 +1,5 @@
 import argon2 from "argon2";
-import { query, isDatabaseUnavailableError } from "./db";
+import { query, isDatabaseUnavailableError } from "./db.js";
 
 export interface CreateAccountInput {
   email: string;
