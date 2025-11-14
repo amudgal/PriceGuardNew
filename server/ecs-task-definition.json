@@ -38,11 +38,11 @@
       "secrets": [
         {
           "name": "DATABASE_URL",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/database-url"
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/database-url-gVnioM"
         },
         {
           "name": "ALLOWED_ORIGINS",
-          "valueFrom": "arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/allowed-origins"
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/allowed-origins-yBKnxy"
         }
       ],
       "logConfiguration": {

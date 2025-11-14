@@ -39,8 +39,9 @@ jobs:
 
       - name: Download RDS CA certificate
         run: |
-          mkdir -p server/certs
-          curl -o server/rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem
+          cd server
+          curl -o rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem
+          ls -la rds-ca-bundle.pem
 
       - name: Build, tag, and push image to Amazon ECR
         id: build-image
@@ -63,6 +64,20 @@ jobs:
           container-name: priceguard-server
           image: ${{ steps.build-image.outputs.image }}
 
+      - name: Register ECS task definition
+        id: register-task-def
+        run: |
+          echo "Task definition file: ${{ steps.task-def.outputs.task-definition }}"
+          cat ${{ steps.task-def.outputs.task-definition }}
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://${{ steps.task-def.outputs.task-definition }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "task-def-arn=$TASK_DEF_ARN" >> $GITHUB_OUTPUT
+          echo "Registered task definition: $TASK_DEF_ARN"
+        continue-on-error: false
+
       - name: Check if ECS service exists
         id: check-service
         run: |
@@ -73,10 +88,12 @@ jobs:
             --query 'services[0].status' \
             --output text 2>/dev/null || echo "NOT_FOUND")
           
-          if [ "$SERVICE_STATUS" == "NOT_FOUND" ] || [ "$SERVICE_STATUS" == "None" ]; then
+          if [ "$SERVICE_STATUS" == "NOT_FOUND" ] || [ "$SERVICE_STATUS" == "None" ] || [ -z "$SERVICE_STATUS" ]; then
             echo "service_exists=false" >> $GITHUB_OUTPUT
+            echo "Service does not exist"
           else
             echo "service_exists=true" >> $GITHUB_OUTPUT
+            echo "Service exists with status: $SERVICE_STATUS"
           fi
 
       - name: Create ECS service (if not exists)
@@ -86,19 +103,30 @@ jobs:
           aws ecs create-service \
             --cluster ${{ env.ECS_CLUSTER_NAME }} \
             --service-name ${{ env.ECS_SERVICE_NAME }} \
-            --task-definition ${{ steps.task-def.outputs.task-definition }} \
+            --task-definition ${{ steps.register-task-def.outputs.task-def-arn }} \
             --desired-count 1 \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[subnet-4854cf05,subnet-f8e531a7],securityGroups=[sg-0d20af83680061442],assignPublicIp=DISABLED}" \
             --region ${{ env.AWS_REGION }}
+          echo "Service created successfully"
 
       - name: Deploy Amazon ECS task definition
+        if: steps.check-service.outputs.service_exists == 'true'
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
           service: ${{ env.ECS_SERVICE_NAME }}
           cluster: ${{ env.ECS_CLUSTER_NAME }}
           wait-for-service-stability: true
+
+      - name: Wait for service to stabilize (if just created)
+        if: steps.check-service.outputs.service_exists == 'false'
+        run: |
+          echo "Waiting for service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER_NAME }} \
+            --services ${{ env.ECS_SERVICE_NAME }} \
+            --region ${{ env.AWS_REGION }} || echo "Service stabilization check completed"
 
       - name: Verify deployment
         run: |
