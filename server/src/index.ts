@@ -1,20 +1,61 @@
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
-import { runMigrations } from "./migrations";
-import { authRouter } from "./routes/auth";
-import { isDatabaseUnavailableError } from "./db";
+import { runMigrations } from "./migrations.js";
+import { authRouter } from "./routes/auth.js";
+import { pool } from "./db.js";
 
 const PORT = Number(process.env.PORT ?? 4000);
 
 async function bootstrap() {
-  const migrationsRan = await runMigrations();
-  if (!migrationsRan) {
-    console.warn("[server] Continuing without database connectivity. API endpoints will return 503 until the database becomes available.");
-  }
+  await runMigrations();
 
   const app = express();
-  app.use(cors());
+  
+  // Health check endpoint (before CORS and middleware - accessible to load balancers)
+  app.get("/health", async (_req, res) => {
+    try {
+      // Quick database connectivity check
+      await pool.query("SELECT 1");
+      res.status(200).json({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        service: "priceguard-server",
+        database: "connected",
+      });
+    } catch (error) {
+      res.status(503).json({
+        status: "unhealthy",
+        timestamp: new Date().toISOString(),
+        service: "priceguard-server",
+        database: "disconnected",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+  
+  // Configure CORS to allow only Netlify domain
+  const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
+    : ["http://localhost:3000"]; // Default for local development
+  
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, Postman, etc.) in development
+        if (!origin && process.env.NODE_ENV !== "production") {
+          return callback(null, true);
+        }
+        if (origin && allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error("Not allowed by CORS"));
+        }
+      },
+      credentials: true,
+    })
+  );
+  
   app.use(morgan("dev"));
   app.use(express.json());
 
@@ -22,9 +63,6 @@ async function bootstrap() {
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err);
-    if (isDatabaseUnavailableError(err)) {
-      return res.status(503).json({ error: "Service temporarily unavailable. Please try again later." });
-    }
     if (err instanceof Error) {
       return res.status(400).json({ error: err.message });
     }

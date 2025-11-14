@@ -15,12 +15,33 @@ cd server
 npm install
 ```
 
-Create a `.env` file (you can base it on the snippet below):
+Copy `env.example` to `.env` (or set the variables through your preferred secret manager):
 
 ```bash
-DATABASE_URL=postgres://user:password@localhost:5432/priceguard
-PGSSLMODE=disable
+cp env.example .env
 ```
+
+Update the values to match your environment, including the database connection string you provide for testing.
+
+### Verify the Database Connection
+
+After your `.env` is configured, you can confirm connectivity:
+
+```bash
+npm run db:check
+```
+
+The command prints the database name and timestamp on success. It exits with a non-zero code if the connection fails.
+
+### Run Database Migrations
+
+Once the database connection is confirmed, create the required tables:
+
+```bash
+npm run db:migrate
+```
+
+The script creates the `accounts` table and required extensions if they do not already exist.
 
 ## Development
 

@@ -1,0 +1,69 @@
+{
+  "family": "priceguard-server",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::144935603834:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::144935603834:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "priceguard-server",
+      "image": "YOUR_ECR_REPO_URI:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 4000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "4000"
+        },
+        {
+          "name": "PGSSLMODE",
+          "value": "verify-full"
+        },
+        {
+          "name": "PGSSLROOTCERT",
+          "value": "/app/rds-ca-bundle.pem"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/database-url"
+        },
+        {
+          "name": "ALLOWED_ORIGINS",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/allowed-origins"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/priceguard-server",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://localhost:4000/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}
+
