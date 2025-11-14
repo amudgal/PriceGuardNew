@@ -63,6 +63,35 @@ jobs:
           container-name: priceguard-server
           image: ${{ steps.build-image.outputs.image }}
 
+      - name: Check if ECS service exists
+        id: check-service
+        run: |
+          SERVICE_STATUS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER_NAME }} \
+            --services ${{ env.ECS_SERVICE_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'services[0].status' \
+            --output text 2>/dev/null || echo "NOT_FOUND")
+          
+          if [ "$SERVICE_STATUS" == "NOT_FOUND" ] || [ "$SERVICE_STATUS" == "None" ]; then
+            echo "service_exists=false" >> $GITHUB_OUTPUT
+          else
+            echo "service_exists=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create ECS service (if not exists)
+        if: steps.check-service.outputs.service_exists == 'false'
+        run: |
+          echo "Creating ECS service..."
+          aws ecs create-service \
+            --cluster ${{ env.ECS_CLUSTER_NAME }} \
+            --service-name ${{ env.ECS_SERVICE_NAME }} \
+            --task-definition ${{ steps.task-def.outputs.task-definition }} \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[subnet-4854cf05,subnet-f8e531a7],securityGroups=[sg-0d20af83680061442],assignPublicIp=DISABLED}" \
+            --region ${{ env.AWS_REGION }}
+
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
