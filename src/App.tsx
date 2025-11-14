@@ -10,9 +10,19 @@ import { Dashboard } from "./components/Dashboard";
 
 type PageType = "home" | "login" | "dashboard";
 
+interface UserData {
+  id: string;
+  email: string;
+  firstName: string | null;
+  plan: string;
+  pastDue: boolean;
+  cardLast4: string | null;
+}
+
 function App() {
   const [currentPage, setCurrentPage] = React.useState<PageType>("home");
   const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+  const [userData, setUserData] = React.useState<UserData | null>(null);
 
   const handleLogin = React.useCallback(() => {
     setCurrentPage("login");
@@ -22,24 +32,28 @@ function App() {
     setCurrentPage("home");
   }, []);
 
-  const handleLoginSuccess = React.useCallback(() => {
+  const handleLoginSuccess = React.useCallback((user?: UserData) => {
+    if (user) {
+      setUserData(user);
+    }
     setIsLoggedIn(true);
     setCurrentPage("dashboard");
   }, []);
 
   const handleLogout = React.useCallback(() => {
     setIsLoggedIn(false);
+    setUserData(null);
     setCurrentPage("home");
   }, []);
 
   // Show Dashboard if logged in
   if (isLoggedIn && currentPage === "dashboard") {
-    return <Dashboard onLogout={handleLogout} />;
+    return <Dashboard onLogout={handleLogout} userData={userData} />;
   }
 
   // Show Login page
   if (currentPage === "login") {
-    return <Login onBack={handleBack} onLoginSuccess={handleLoginSuccess} />;
+    return <Login onBack={handleBack} onLoginSuccess={(user) => handleLoginSuccess(user)} />;
   }
 
   // Show Home page

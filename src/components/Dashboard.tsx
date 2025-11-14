@@ -41,8 +41,18 @@ import {
 } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 
+interface UserData {
+  id: string;
+  email: string;
+  firstName: string | null;
+  plan: string;
+  pastDue: boolean;
+  cardLast4: string | null;
+}
+
 interface DashboardProps {
   onLogout: () => void;
+  userData: UserData | null;
 }
 
 // Mock data for charts
@@ -98,7 +108,7 @@ const monitoredProducts = [
   },
 ];
 
-export function Dashboard({ onLogout }: DashboardProps) {
+export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [notifications, setNotifications] = React.useState({
     email: true,
     sms: false,
@@ -126,7 +136,9 @@ export function Dashboard({ onLogout }: DashboardProps) {
             </div>
 
             <div className="flex items-center space-x-4">
-              <span className="text-gray-300 hidden md:block">Welcome back, John!</span>
+              <span className="text-gray-300 hidden md:block">
+                Welcome back, {userData?.firstName || "User"}!
+              </span>
               <Button 
                 variant="ghost" 
                 className="text-gray-300 hover:text-white hover:bg-[#2D2D2D]"
@@ -147,7 +159,9 @@ export function Dashboard({ onLogout }: DashboardProps) {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div className="space-y-2">
-                <h2 className="text-2xl text-gray-700">Welcome to Your PriceGuard Dashboard!</h2>
+                <h2 className="text-2xl text-gray-700">
+                  Welcome to Your PriceGuard Dashboard{userData?.firstName ? `, ${userData.firstName}` : ""}!
+                </h2>
                 <p className="text-gray-600">
                   Start by adding products to monitor, and we'll automatically track price changes for the next 30 days.
                 </p>
