@@ -106,7 +106,7 @@ jobs:
             --task-definition ${{ steps.register-task-def.outputs.task-def-arn }} \
             --desired-count 1 \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[subnet-4854cf05,subnet-f8e531a7],securityGroups=[sg-0d20af83680061442],assignPublicIp=DISABLED}" \
+            --network-configuration "awsvpcConfiguration={subnets=[subnet-4854cf05,subnet-f8e531a7],securityGroups=[sg-0d20af83680061442],assignPublicIp=ENABLED}" \
             --region ${{ env.AWS_REGION }}
           echo "Service created successfully"
 
