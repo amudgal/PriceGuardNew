@@ -64,8 +64,27 @@ if (process.env.PGSSLMODE !== "disable") {
   }
 }
 
+// Parse DATABASE_URL to remove conflicting SSL parameters
+// The DATABASE_URL might contain ?sslmode=verify-full or similar which conflicts with our SSL config
+let connectionString = process.env.DATABASE_URL;
+try {
+  const url = new URL(connectionString);
+  // Remove SSL-related query parameters that might conflict
+  url.searchParams.delete('sslmode');
+  url.searchParams.delete('ssl');
+  url.searchParams.delete('sslcert');
+  url.searchParams.delete('sslkey');
+  url.searchParams.delete('sslrootcert');
+  url.searchParams.delete('sslcertmode');
+  connectionString = url.toString();
+  console.log(`[db] Cleaned DATABASE_URL of SSL parameters`);
+} catch (error) {
+  // If URL parsing fails, use original connection string
+  console.warn(`[db] Could not parse DATABASE_URL: ${error}`);
+}
+
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString,
   ssl,
 });
 
