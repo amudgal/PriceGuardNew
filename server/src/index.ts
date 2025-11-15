@@ -62,6 +62,8 @@ async function bootstrap() {
     ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
     : ["http://localhost:3000"]; // Default for local development
   
+  console.log(`[cors] Allowed origins: ${allowedOrigins.join(", ")}`);
+  
   app.use(
     cors({
       origin: (origin, callback) => {
@@ -72,10 +74,14 @@ async function bootstrap() {
         if (origin && allowedOrigins.includes(origin)) {
           callback(null, true);
         } else {
+          console.warn(`[cors] Blocked request from origin: ${origin || "none"}`);
           callback(new Error("Not allowed by CORS"));
         }
       },
       credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+      exposedHeaders: ["Content-Type"],
     })
   );
   
