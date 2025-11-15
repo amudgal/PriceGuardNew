@@ -38,12 +38,20 @@ if (process.env.PGSSLMODE !== "disable") {
     process.env.PGSSLMODE === "verify-full" || 
     process.env.PGSSLMODE === "verify-ca";
   
-  ssl = {
-    rejectUnauthorized,
-    ...(ca && { ca }),
-  };
-  
-  console.log(`[db] SSL mode: ${process.env.PGSSLMODE}, rejectUnauthorized: ${rejectUnauthorized}`);
+  // If CA certificate is provided, always include it in SSL config
+  // This helps with certificate chain validation even when rejectUnauthorized is false
+  if (ca) {
+    ssl = {
+      rejectUnauthorized,
+      ca,
+    };
+    console.log(`[db] SSL mode: ${process.env.PGSSLMODE}, rejectUnauthorized: ${rejectUnauthorized}, CA certificate loaded`);
+  } else {
+    ssl = {
+      rejectUnauthorized,
+    };
+    console.log(`[db] SSL mode: ${process.env.PGSSLMODE}, rejectUnauthorized: ${rejectUnauthorized}, no CA certificate`);
+  }
 }
 
 export const pool = new Pool({
