@@ -14,6 +14,23 @@ async function bootstrap() {
   
   // Health check endpoint (before CORS and middleware - accessible to load balancers)
   app.get("/health", async (_req, res) => {
+    // Check if this is a simple health check (container health check)
+    // vs a detailed health check (load balancer/API health check)
+    const isSimpleCheck = _req.headers["user-agent"]?.includes("Wget") || 
+                          _req.query.simple === "true";
+    
+    if (isSimpleCheck) {
+      // For container health checks, return 200 if server is running
+      // Don't fail health check just because DB is temporarily unavailable
+      res.status(200).json({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        service: "priceguard-server",
+      });
+      return;
+    }
+    
+    // For detailed health checks (ALB, API calls), check database
     try {
       // Quick database connectivity check
       await pool.query("SELECT 1");
@@ -69,8 +86,8 @@ async function bootstrap() {
     res.status(500).json({ error: "Unexpected error" });
   });
 
-  app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server listening on port ${PORT} on 0.0.0.0`);
   });
 }
 
