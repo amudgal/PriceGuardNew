@@ -30,7 +30,11 @@
         },
         {
           "name": "PGSSLMODE",
-          "value": "allow"
+          "value": "verify-full"
+        },
+        {
+          "name": "PGSSLROOTCERT",
+          "value": "/app/rds-ca-bundle.pem"
         }
       ],
       "secrets": [
