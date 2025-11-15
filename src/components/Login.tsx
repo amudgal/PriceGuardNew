@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Badge } from "./ui/badge";
 import { Check, ShoppingCart, ArrowLeft, Shield, CreditCard } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
+import { API_ENDPOINTS, API_BASE_URL } from "../config/api";
 
 interface UserData {
   id: string;
@@ -69,8 +70,6 @@ const plans = [
     popular: false
   }
 ];
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:4000";
 
 export function Login({ onBack, onLoginSuccess }: LoginProps) {
   const [selectedPlan, setSelectedPlan] = React.useState<string>("");
@@ -186,7 +185,7 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
 
       setSignupLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+        const response = await fetch(API_ENDPOINTS.auth.register(), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -246,7 +245,7 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
 
       setLoginLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        const response = await fetch(API_ENDPOINTS.auth.login(), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: loginEmail, password: loginPassword }),
