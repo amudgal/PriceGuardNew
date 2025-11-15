@@ -54,12 +54,12 @@
       "healthCheck": {
         "command": [
           "CMD-SHELL",
-          "wget --no-verbose --tries=1 --spider http://localhost:4000/health || exit 1"
+          "wget --no-verbose --tries=1 --spider http://localhost:4000/health?simple=1 || exit 1"
         ],
         "interval": 30,
         "timeout": 5,
         "retries": 3,
-        "startPeriod": 60
+        "startPeriod": 120
       }
     }
   ]
