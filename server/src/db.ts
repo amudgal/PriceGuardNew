@@ -7,13 +7,44 @@ dotenv.config({ path: process.env.DOTENV_CONFIG_PATH });
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
 }
-const ssl =
-  process.env.PGSSLMODE === "disable"
-    ? false
-    : {
-        rejectUnauthorized: process.env.PGSSLMODE !== "allow",
-        ca: process.env.PGSSLROOTCERT ? fs.readFileSync(process.env.PGSSLROOTCERT).toString() : undefined,
-      };
+
+// Configure SSL based on PGSSLMODE
+let ssl: false | { rejectUnauthorized: boolean; ca?: string } = false;
+
+if (process.env.PGSSLMODE !== "disable") {
+  let ca: string | undefined;
+  
+  // Try to read CA certificate if path is provided
+  if (process.env.PGSSLROOTCERT) {
+    try {
+      if (fs.existsSync(process.env.PGSSLROOTCERT)) {
+        ca = fs.readFileSync(process.env.PGSSLROOTCERT, "utf8");
+        console.log(`[db] Loaded SSL CA certificate from ${process.env.PGSSLROOTCERT}`);
+      } else {
+        console.warn(`[db] SSL CA certificate file not found: ${process.env.PGSSLROOTCERT}`);
+        console.warn(`[db] Continuing without CA certificate (less secure)`);
+      }
+    } catch (error) {
+      console.error(`[db] Error reading SSL CA certificate: ${error}`);
+      console.warn(`[db] Continuing without CA certificate (less secure)`);
+    }
+  }
+  
+  // Determine rejectUnauthorized based on SSL mode
+  // verify-full, verify-ca: reject unauthorized (require valid cert)
+  // require, prefer: don't reject (use SSL but don't verify cert)
+  // allow: don't reject (prefer non-SSL but allow SSL)
+  const rejectUnauthorized = 
+    process.env.PGSSLMODE === "verify-full" || 
+    process.env.PGSSLMODE === "verify-ca";
+  
+  ssl = {
+    rejectUnauthorized,
+    ...(ca && { ca }),
+  };
+  
+  console.log(`[db] SSL mode: ${process.env.PGSSLMODE}, rejectUnauthorized: ${rejectUnauthorized}`);
+}
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -54,7 +85,10 @@ export function isDatabaseUnavailableError(error: unknown): boolean {
       errorMessage.includes("database") ||
       errorMessage.includes("timeout") ||
       errorMessage.includes("econnrefused") ||
-      errorMessage.includes("enotfound")
+      errorMessage.includes("enotfound") ||
+      errorMessage.includes("ssl") ||
+      errorMessage.includes("certificate") ||
+      errorMessage.includes("self-signed")
     );
   }
   
