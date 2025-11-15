@@ -11,8 +11,9 @@
  * 
  * Priority:
  * 1. VITE_API_BASE_URL environment variable (set in Netlify)
- * 2. Auto-detect from window location (production HTTPS → ALB HTTPS)
- * 3. Fallback to localhost for development
+ * 2. Production domain: api.priceguardbackend.live (if available)
+ * 3. Auto-detect from window location (production HTTPS → ALB HTTPS)
+ * 4. Fallback to localhost for development
  */
 export function getApiBaseUrl(): string {
   // If explicitly set via environment variable, use it
@@ -27,14 +28,14 @@ export function getApiBaseUrl(): string {
     const isHttps = window.location.protocol === 'https:';
 
     if (isProduction && isHttps) {
-      // Production HTTPS: Use ALB HTTPS endpoint
-      // ALB DNS: priceguard-alb-1564033973.us-east-1.elb.amazonaws.com
-      return 'https://priceguard-alb-1564033973.us-east-1.elb.amazonaws.com';
+      // Production HTTPS: Use custom domain first, then fallback to ALB
+      // Custom domain: api.priceguardbackend.live
+      return 'https://api.priceguardbackend.live';
     }
 
     if (isProduction && !isHttps) {
-      // Production HTTP: Use ALB HTTP endpoint (shouldn't happen but fallback)
-      return 'http://priceguard-alb-1564033973.us-east-1.elb.amazonaws.com';
+      // Production HTTP: Use custom domain (shouldn't happen but fallback)
+      return 'http://api.priceguardbackend.live';
     }
   }
 
@@ -70,4 +71,3 @@ export const API_ENDPOINTS = {
   },
   health: () => apiEndpoint('/health'),
 } as const;
-
