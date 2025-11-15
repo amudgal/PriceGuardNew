@@ -1,7 +1,9 @@
 {
   "family": "priceguard-server",
   "networkMode": "awsvpc",
-  "requiresCompatibilities": ["FARGATE"],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
   "cpu": "256",
   "memory": "512",
   "executionRoleArn": "arn:aws:iam::144935603834:role/ecsTaskExecutionRole",
@@ -9,7 +11,7 @@
   "containerDefinitions": [
     {
       "name": "priceguard-server",
-      "image": "YOUR_ECR_REPO_URI:latest",
+      "image": "144935603834.dkr.ecr.us-east-1.amazonaws.com/priceguard-server:latest",
       "essential": true,
       "portMappings": [
         {
@@ -28,11 +30,7 @@
         },
         {
           "name": "PGSSLMODE",
-          "value": "verify-full"
-        },
-        {
-          "name": "PGSSLROOTCERT",
-          "value": "/app/rds-ca-bundle.pem"
+          "value": "allow"
         }
       ],
       "secrets": [
@@ -66,4 +64,3 @@
     }
   ]
 }
-
