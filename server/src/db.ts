@@ -38,19 +38,29 @@ if (process.env.PGSSLMODE !== "disable") {
     process.env.PGSSLMODE === "verify-full" || 
     process.env.PGSSLMODE === "verify-ca";
   
-  // If CA certificate is provided, always include it in SSL config
-  // This helps with certificate chain validation even when rejectUnauthorized is false
-  if (ca) {
+  // When rejectUnauthorized is false (require/prefer/allow modes), 
+  // don't provide CA certificate to avoid certificate chain validation issues
+  // Only include CA when we're doing strict verification (verify-full/verify-ca)
+  if (rejectUnauthorized && ca) {
+    // Strict verification: include CA for proper certificate chain validation
     ssl = {
-      rejectUnauthorized,
+      rejectUnauthorized: true,
       ca,
     };
-    console.log(`[db] SSL mode: ${process.env.PGSSLMODE}, rejectUnauthorized: ${rejectUnauthorized}, CA certificate loaded`);
-  } else {
+    console.log(`[db] SSL mode: ${process.env.PGSSLMODE}, rejectUnauthorized: true, CA certificate loaded for verification`);
+  } else if (!rejectUnauthorized) {
+    // Non-strict modes: don't validate certificate chain
+    // Don't include CA to avoid certificate chain issues
     ssl = {
-      rejectUnauthorized,
+      rejectUnauthorized: false,
     };
-    console.log(`[db] SSL mode: ${process.env.PGSSLMODE}, rejectUnauthorized: ${rejectUnauthorized}, no CA certificate`);
+    console.log(`[db] SSL mode: ${process.env.PGSSLMODE}, rejectUnauthorized: false, skipping certificate validation`);
+  } else {
+    // Strict mode but no CA available - should not happen but handle gracefully
+    ssl = {
+      rejectUnauthorized: true,
+    };
+    console.warn(`[db] SSL mode: ${process.env.PGSSLMODE} requires CA certificate but none provided`);
   }
 }
 
