@@ -30,7 +30,7 @@
         },
         {
           "name": "PGSSLMODE",
-          "value": "verify-full"
+          "value": "require"
         },
         {
           "name": "PGSSLROOTCERT",
