@@ -106,34 +106,64 @@ async function bootstrap() {
     }
   });
   
-  // Configure CORS to allow only Netlify domain
+  // Configure CORS to allow specified origins
   // Read ALLOWED_ORIGINS and ensure it's parsed correctly (handle comma-separated values)
   const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || "";
   console.log(`[debug] ALLOWED_ORIGINS from env: "${allowedOriginsEnv}"`);
-  const allowedOrigins = allowedOriginsEnv
+  
+  // Default origins for development
+  const defaultOrigins = ["http://localhost:3000", "http://localhost:5173"];
+  
+  // Production origins to include by default
+  const productionOrigins = [
+    "https://priceguardbackend.live",
+    "http://priceguardbackend.live",
+  ];
+  
+  // Parse allowed origins from environment variable
+  const envOrigins = allowedOriginsEnv
     ? allowedOriginsEnv.split(",").map((origin) => origin.trim()).filter(Boolean)
-    : ["http://localhost:3000", "http://localhost:5173"]; // Default for local development (both Vite ports)
+    : [];
+  
+  // Combine: env origins take precedence, but include defaults if no env set
+  const allowedOrigins = envOrigins.length > 0
+    ? envOrigins
+    : process.env.NODE_ENV === "production"
+    ? [...defaultOrigins, ...productionOrigins]
+    : defaultOrigins;
   
   console.log(`[cors] Allowed origins: ${allowedOrigins.join(", ")}`);
+  console.log(`[cors] Node environment: ${process.env.NODE_ENV || "development"}`);
   
   app.use(
     cors({
       origin: (origin, callback) => {
         // Allow requests with no origin (mobile apps, Postman, etc.) in development
         if (!origin && process.env.NODE_ENV !== "production") {
+          console.log(`[cors] Allowing request with no origin (development mode)`);
           return callback(null, true);
         }
-        if (origin && allowedOrigins.includes(origin)) {
+        
+        if (!origin) {
+          console.warn(`[cors] Rejecting request with no origin (production mode)`);
+          return callback(new Error("CORS: Origin required in production"));
+        }
+        
+        if (allowedOrigins.includes(origin)) {
+          console.log(`[cors] Allowing request from origin: ${origin}`);
           callback(null, true);
         } else {
-          console.warn(`[cors] Blocked request from origin: ${origin || "none"}`);
-          callback(new Error("Not allowed by CORS"));
+          console.warn(`[cors] Blocked request from origin: ${origin}`);
+          console.warn(`[cors] Allowed origins are: ${allowedOrigins.join(", ")}`);
+          callback(new Error(`CORS: Origin ${origin} is not allowed. Allowed origins: ${allowedOrigins.join(", ")}`));
         }
       },
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
       exposedHeaders: ["Content-Type"],
+      preflightContinue: false,
+      optionsSuccessStatus: 204, // Respond with 204 for OPTIONS requests
     })
   );
   
