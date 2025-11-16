@@ -69,5 +69,15 @@ export const API_ENDPOINTS = {
     login: () => apiEndpoint('/api/auth/login'),
     register: () => apiEndpoint('/api/auth/register'),
   },
+  billing: {
+    createSetupIntent: () => apiEndpoint('/api/billing/create-setup-intent'),
+    savePaymentMethod: () => apiEndpoint('/api/billing/save-payment-method'),
+    createSubscription: () => apiEndpoint('/api/billing/create-subscription'),
+    cancelSubscription: () => apiEndpoint('/api/billing/cancel-subscription'),
+    subscription: (email: string) =>
+      apiEndpoint(`/api/billing/subscription?email=${encodeURIComponent(email)}`),
+    billingHistory: (email: string) =>
+      apiEndpoint(`/api/billing/billing-history?email=${encodeURIComponent(email)}`),
+  },
   health: () => apiEndpoint('/health'),
 } as const;

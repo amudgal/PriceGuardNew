@@ -28,6 +28,18 @@ export async function runMigrations(): Promise<boolean> {
     );
   `);
 
+  // Stripe integration columns (idempotent ALTER TABLE with IF NOT EXISTS)
+  await query(`
+    ALTER TABLE accounts
+      ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT,
+      ADD COLUMN IF NOT EXISTS stripe_default_payment_method_id TEXT,
+      ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT,
+      ADD COLUMN IF NOT EXISTS subscription_status TEXT,
+      ADD COLUMN IF NOT EXISTS stripe_price_id TEXT,
+      ADD COLUMN IF NOT EXISTS stripe_latest_invoice_id TEXT,
+      ADD COLUMN IF NOT EXISTS stripe_latest_invoice_status TEXT;
+  `);
+
   await query(`CREATE INDEX IF NOT EXISTS accounts_email_idx ON accounts (email);`);
 
   return true;

@@ -45,6 +45,14 @@
         {
           "name": "ALLOWED_ORIGINS",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/allowed-origins-yBKnxy"
+        },
+        {
+          "name": "STRIPE_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/stripe-secret-key-test-U9QWCx"
+        },
+        {
+          "name": "STRIPE_WEBHOOK_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/stripe-webhook-secret-rSO5RN"
         }
       ],
       "logConfiguration": {

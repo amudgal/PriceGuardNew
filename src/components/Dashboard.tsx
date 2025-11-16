@@ -40,6 +40,8 @@ import {
   Cell 
 } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { BillingCardForm } from "./BillingCardForm";
+import { API_ENDPOINTS } from "../config/api";
 
 interface UserData {
   id: string;
@@ -118,13 +120,135 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   });
 
   const [selectedChannel, setSelectedChannel] = React.useState("email");
+  const userEmail = userData?.email ?? "";
   const [isAddProductOpen, setIsAddProductOpen] = React.useState(false);
   const [showProductIdHelp, setShowProductIdHelp] = React.useState(false);
   const [showClaimHelp, setShowClaimHelp] = React.useState(false);
+  
+  // Subscription state
+  const [subscriptionData, setSubscriptionData] = React.useState<{
+    plan: string;
+    pastDue: boolean;
+    cardLast4: string | null;
+    stripeSubscriptionId: string | null;
+    subscriptionStatus: string | null;
+    stripePriceId: string | null;
+  } | null>(null);
+  const [isLoadingSubscription, setIsLoadingSubscription] = React.useState(false);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = React.useState(false);
+  const [isCancelling, setIsCancelling] = React.useState(false);
+  const [cancelError, setCancelError] = React.useState<string | null>(null);
+  
+  // Billing history state
+  const [billingHistory, setBillingHistory] = React.useState<{
+    transactions: Array<{
+      id: string;
+      type: 'invoice' | 'payment_intent' | 'charge';
+      transactionNumber: string | null;
+      amount: number;
+      currency: string;
+      status: string;
+      date: string;
+      periodStart: string | null;
+      periodEnd: string | null;
+      hostedInvoiceUrl: string | null;
+      invoicePdf: string | null;
+      description: string;
+      isProcessed: boolean;
+      isProcessing: boolean;
+    }>;
+    invoices: Array<any>;
+    paymentIntents: Array<any>;
+    charges: Array<any>;
+    totalAmount: number;
+    count: number;
+    processedCount: number;
+    processingCount: number;
+  } | null>(null);
+  const [isLoadingBillingHistory, setIsLoadingBillingHistory] = React.useState(false);
 
   const handleNotificationChange = React.useCallback((key: string, value: boolean) => {
     setNotifications(prev => ({ ...prev, [key]: value }));
   }, []);
+
+  // Fetch subscription data
+  const fetchSubscriptionData = React.useCallback(async () => {
+    if (!userEmail) return;
+    
+    setIsLoadingSubscription(true);
+    try {
+      const response = await fetch(API_ENDPOINTS.billing.subscription(userEmail));
+      if (response.ok) {
+        const data = await response.json();
+        setSubscriptionData(data);
+      } else {
+        console.error("Failed to fetch subscription data");
+      }
+    } catch (error) {
+      console.error("Error fetching subscription data:", error);
+    } finally {
+      setIsLoadingSubscription(false);
+    }
+  }, [userEmail]);
+
+  // Fetch billing history
+  const fetchBillingHistory = React.useCallback(async () => {
+    if (!userEmail) return;
+    
+    setIsLoadingBillingHistory(true);
+    try {
+      const response = await fetch(API_ENDPOINTS.billing.billingHistory(userEmail));
+      if (response.ok) {
+        const data = await response.json();
+        setBillingHistory(data);
+      } else {
+        console.error("Failed to fetch billing history");
+      }
+    } catch (error) {
+      console.error("Error fetching billing history:", error);
+    } finally {
+      setIsLoadingBillingHistory(false);
+    }
+  }, [userEmail]);
+
+  // Fetch subscription data on mount and when userData changes
+  React.useEffect(() => {
+    fetchSubscriptionData();
+    fetchBillingHistory();
+  }, [fetchSubscriptionData, fetchBillingHistory]);
+
+  // Handle cancel subscription
+  const handleCancelSubscription = React.useCallback(async (cancelImmediately: boolean = false) => {
+    if (!userEmail) return;
+    
+    setIsCancelling(true);
+    setCancelError(null);
+    
+    try {
+      const response = await fetch(API_ENDPOINTS.billing.cancelSubscription(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: userEmail, cancelImmediately }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Refresh subscription data
+        await fetchSubscriptionData();
+        setIsCancelDialogOpen(false);
+        alert(cancelImmediately 
+          ? "Your subscription has been cancelled immediately." 
+          : "Your subscription will be cancelled at the end of the billing period. You'll continue to have access until then.");
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setCancelError(errorData.error || "Failed to cancel subscription");
+      }
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : "An unexpected error occurred");
+    } finally {
+      setIsCancelling(false);
+    }
+  }, [userEmail, fetchSubscriptionData]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1016,47 +1140,61 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               </AlertDescription>
             </Alert>
 
-            {/* Payment Methods */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Payment Methods</CardTitle>
-                <CardDescription>Your credit/debit cards for subscription payments and refunds</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  {[
-                    { type: "Visa", last4: "4242", expiry: "12/25", isDefault: true },
-                    { type: "Mastercard", last4: "8888", expiry: "08/26", isDefault: false },
-                  ].map((card, index) => (
-                    <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <CreditCard className="h-5 w-5 text-gray-400" />
-                        <div>
-                          <p className="text-gray-700">{card.type} ending in {card.last4}</p>
-                          <p className="text-sm text-gray-500">Expires {card.expiry}</p>
+            {/* Billing & Payment Methods - Side by Side */}
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Current Payment Method Card */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Current Payment Method</CardTitle>
+                  <CardDescription>Your saved card for subscription payments</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {subscriptionData?.cardLast4 ? (
+                    <div className="flex flex-col space-y-4">
+                      <div className="flex items-center justify-between p-4 border rounded-lg bg-gray-50">
+                        <div className="flex items-center space-x-3">
+                          <CreditCard className="h-5 w-5 text-gray-400" />
+                          <div>
+                            <p className="text-gray-700 font-medium">Card ending in {subscriptionData.cardLast4}</p>
+                            <p className="text-sm text-gray-500">Stored securely with Stripe</p>
+                          </div>
                         </div>
+                        <Badge variant={subscriptionData.pastDue ? "destructive" : "secondary"}>
+                          {subscriptionData.pastDue ? "Past Due" : "Active"}
+                        </Badge>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        {card.isDefault && (
-                          <Badge className="bg-[#E91E8C]">Primary Card</Badge>
-                        )}
-                        <Button variant="ghost" size="sm">Edit</Button>
-                        <Button variant="ghost" size="sm" className="text-red-600">
-                          Remove
-                        </Button>
+                      <div className="text-xs text-gray-500">
+                        💳 Your card information is securely encrypted and never shared with PriceGuard. All payments are processed by Stripe.
                       </div>
                     </div>
-                  ))}
-                </div>
-                <Button variant="outline" className="w-full">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add New Card
-                </Button>
-                <p className="text-xs text-gray-500">
-                  💳 Your card information is securely encrypted and never shared
-                </p>
-              </CardContent>
-            </Card>
+                  ) : (
+                    <div className="p-4 border rounded-lg bg-yellow-50 border-yellow-200">
+                      <p className="text-sm text-gray-700">
+                        No payment method on file. Please add a card using the form on the right.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Add/Update Card Form */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Add or Update Card</CardTitle>
+                  <CardDescription>Use Stripe to securely save your payment method</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <BillingCardForm
+                    email={userEmail}
+                    plan={subscriptionData?.plan || userData?.plan}
+                    onCompleted={() => {
+                      // Refresh subscription data after card is saved
+                      fetchSubscriptionData();
+                    }}
+                  />
+                </CardContent>
+              </Card>
+            </div>
 
             {/* Account Information */}
             <Card>
@@ -1159,31 +1297,264 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                 <CardDescription>Manage your PriceGuard membership</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg">
-                  <div>
-                    <p className="text-gray-700 font-medium">Premium Plan</p>
-                    <p className="text-sm text-gray-600">$29.99/month</p>
-                    <p className="text-xs text-gray-500 mt-1">Renews on January 15, 2025</p>
+                {isLoadingSubscription ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-gray-500">Loading subscription information...</p>
                   </div>
-                  <Badge className="bg-[#E91E8C]">Active</Badge>
-                </div>
-                <div className="space-y-2 text-sm text-gray-600 bg-gray-50 p-4 rounded-lg">
-                  <p className="font-medium text-gray-700 mb-2">What's included:</p>
-                  <p>✅ Unlimited product monitoring</p>
-                  <p>✅ Detailed savings dashboard & analytics</p>
-                  <p>✅ Watchlist for favorite items</p>
-                  <p>✅ Price drop predictions</p>
-                  <p>✅ Priority customer support</p>
-                </div>
-                <div className="flex space-x-3">
-                  <Button variant="outline" className="flex-1">Change Plan</Button>
-                  <Button variant="ghost" className="flex-1 text-red-600 hover:text-red-700">
-                    Cancel Subscription
-                  </Button>
-                </div>
-                <p className="text-xs text-gray-500">
-                  💡 If you cancel, you'll keep access until January 15, 2025
-                </p>
+                ) : subscriptionData ? (
+                  <>
+                    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-pink-50 to-purple-50 rounded-lg">
+                      <div>
+                        <p className="text-gray-700 font-medium capitalize">{subscriptionData.plan} Plan</p>
+                        <p className="text-sm text-gray-600">
+                          {subscriptionData.subscriptionStatus === 'active' || subscriptionData.subscriptionStatus === 'trialing' 
+                            ? '$29.99/month' 
+                            : 'No active subscription'}
+                        </p>
+                        {subscriptionData.subscriptionStatus && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Status: <span className="capitalize">{subscriptionData.subscriptionStatus}</span>
+                          </p>
+                        )}
+                      </div>
+                      <Badge 
+                        variant={
+                          subscriptionData.subscriptionStatus === 'active' || subscriptionData.subscriptionStatus === 'trialing' 
+                            ? 'default' 
+                            : subscriptionData.subscriptionStatus === 'canceled' || subscriptionData.subscriptionStatus === 'past_due'
+                            ? 'destructive'
+                            : 'secondary'
+                        }
+                        className={
+                          subscriptionData.subscriptionStatus === 'active' || subscriptionData.subscriptionStatus === 'trialing'
+                            ? 'bg-[#E91E8C]'
+                            : ''
+                        }
+                      >
+                        {subscriptionData.subscriptionStatus === 'active' || subscriptionData.subscriptionStatus === 'trialing' 
+                          ? 'Active' 
+                          : subscriptionData.subscriptionStatus === 'canceled'
+                          ? 'Cancelled'
+                          : subscriptionData.subscriptionStatus === 'past_due'
+                          ? 'Past Due'
+                          : 'Inactive'}
+                      </Badge>
+                    </div>
+                    <div className="space-y-2 text-sm text-gray-600 bg-gray-50 p-4 rounded-lg">
+                      <p className="font-medium text-gray-700 mb-2">What's included:</p>
+                      <p>✅ Unlimited product monitoring</p>
+                      <p>✅ Detailed savings dashboard & analytics</p>
+                      <p>✅ Watchlist for favorite items</p>
+                      <p>✅ Price drop predictions</p>
+                      <p>✅ Priority customer support</p>
+                    </div>
+                    {subscriptionData.subscriptionStatus === 'active' || subscriptionData.subscriptionStatus === 'trialing' ? (
+                      <div className="flex space-x-3">
+                        <Button variant="outline" className="flex-1" disabled>Change Plan</Button>
+                        <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
+                          <DialogTrigger asChild>
+                            <Button variant="ghost" className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50">
+                              Cancel Subscription
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Cancel Subscription</DialogTitle>
+                              <DialogDescription>
+                                Are you sure you want to cancel your subscription? You'll lose access to all premium features.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4 py-4">
+                              {cancelError && (
+                                <Alert variant="destructive">
+                                  <AlertDescription>{cancelError}</AlertDescription>
+                                </Alert>
+                              )}
+                              <p className="text-sm text-gray-600">
+                                Choose how you want to cancel:
+                              </p>
+                              <div className="space-y-2">
+                                <Button
+                                  variant="outline"
+                                  className="w-full"
+                                  onClick={() => handleCancelSubscription(false)}
+                                  disabled={isCancelling}
+                                >
+                                  Cancel at Period End
+                                  <span className="text-xs text-gray-500 ml-2">
+                                    (Keep access until end of billing period)
+                                  </span>
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  className="w-full"
+                                  onClick={() => handleCancelSubscription(true)}
+                                  disabled={isCancelling}
+                                >
+                                  Cancel Immediately
+                                  <span className="text-xs ml-2">
+                                    (Access ends immediately)
+                                  </span>
+                                </Button>
+                              </div>
+                              {isCancelling && (
+                                <p className="text-sm text-gray-500 text-center">
+                                  Cancelling subscription...
+                                </p>
+                              )}
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    ) : (
+                      <Alert>
+                        <Info className="h-4 w-4" />
+                        <AlertDescription>
+                          {subscriptionData.subscriptionStatus === 'canceled' 
+                            ? 'Your subscription has been cancelled. Reactivate by adding a payment method and creating a new subscription.'
+                            : 'No active subscription. Add a payment method above to start a subscription.'}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-gray-500">No subscription information available.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Billing History */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Billing History</CardTitle>
+                <CardDescription>Your invoices and payments from the last 12 months</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isLoadingBillingHistory ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-gray-500">Loading billing history...</p>
+                  </div>
+                ) : billingHistory && billingHistory.transactions.length > 0 ? (
+                  <>
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div className="flex-1">
+                        <p className="text-sm text-gray-600">Total billed in last 12 months</p>
+                        <p className="text-2xl font-semibold text-gray-900">
+                          ${billingHistory.totalAmount.toFixed(2)}
+                        </p>
+                        <div className="flex items-center gap-4 mt-2">
+                          <p className="text-xs text-gray-500">
+                            {billingHistory.processedCount} {billingHistory.processedCount === 1 ? 'processed' : 'processed'}
+                          </p>
+                          {billingHistory.processingCount > 0 && (
+                            <p className="text-xs text-orange-600 font-medium">
+                              {billingHistory.processingCount} {billingHistory.processingCount === 1 ? 'processing' : 'processing'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-medium text-gray-700">Recent Transactions</h3>
+                      <div className="space-y-2 max-h-96 overflow-y-auto">
+                        {billingHistory.transactions.map((transaction) => (
+                          <div
+                            key={transaction.id}
+                            className={`flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors ${
+                              transaction.isProcessing ? 'bg-orange-50 border-orange-200' : ''
+                            }`}
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-2">
+                                <p className="text-sm font-medium text-gray-900">
+                                  {transaction.transactionNumber || `${transaction.type === 'invoice' ? 'Invoice' : transaction.type === 'payment_intent' ? 'Payment' : 'Charge'} ${transaction.id.slice(0, 8)}`}
+                                </p>
+                                <Badge
+                                  variant={
+                                    transaction.status === 'paid' || transaction.status === 'succeeded'
+                                      ? 'default'
+                                      : transaction.isProcessing
+                                      ? 'secondary'
+                                      : 'destructive'
+                                  }
+                                  className={
+                                    transaction.status === 'paid' || transaction.status === 'succeeded'
+                                      ? 'bg-green-100 text-green-800 border-green-200'
+                                      : transaction.isProcessing
+                                      ? 'bg-orange-100 text-orange-800 border-orange-200'
+                                      : ''
+                                  }
+                                >
+                                  {transaction.status === 'paid' || transaction.status === 'succeeded'
+                                    ? 'Processed'
+                                    : transaction.status === 'open' || transaction.status === 'processing' || transaction.status === 'pending'
+                                    ? 'Processing'
+                                    : transaction.status === 'requires_action' || transaction.status === 'requires_payment_method'
+                                    ? 'Action Required'
+                                    : transaction.status === 'void' || transaction.status === 'canceled'
+                                    ? 'Cancelled'
+                                    : transaction.status === 'failed'
+                                    ? 'Failed'
+                                    : transaction.status === 'refunded'
+                                    ? 'Refunded'
+                                    : transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
+                                </Badge>
+                                {transaction.type !== 'invoice' && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {transaction.type === 'payment_intent' ? 'Payment' : 'Charge'}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {new Date(transaction.date).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                })}
+                              </p>
+                              <p className="text-xs text-gray-600 mt-1">{transaction.description}</p>
+                            </div>
+                            <div className="flex items-center space-x-3">
+                              <div className="text-right">
+                                <p className="text-sm font-semibold text-gray-900">
+                                  ${transaction.amount.toFixed(2)} {transaction.currency}
+                                </p>
+                                {transaction.isProcessing && (
+                                  <p className="text-xs text-orange-600 mt-1">Processing...</p>
+                                )}
+                              </div>
+                              {(transaction.hostedInvoiceUrl || transaction.invoicePdf) && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => window.open(transaction.hostedInvoiceUrl || transaction.invoicePdf || '', '_blank')}
+                                >
+                                  <Eye className="h-4 w-4 mr-1" />
+                                  View
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-gray-500">No billing history found for the last 12 months.</p>
+                  </div>
+                )}
+                {billingHistory && billingHistory.processingCount > 0 && (
+                  <Alert className="bg-orange-50 border-orange-200">
+                    <Info className="h-4 w-4 text-orange-600" />
+                    <AlertDescription className="text-sm text-orange-900">
+                      You have {billingHistory.processingCount} {billingHistory.processingCount === 1 ? 'transaction' : 'transactions'} currently processing. 
+                      These will appear as processed once payment is completed.
+                    </AlertDescription>
+                  </Alert>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

@@ -1,9 +1,35 @@
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import { runMigrations } from "./migrations.js";
 import { authRouter } from "./routes/auth.js";
 import { pool } from "./db.js";
+import { billingRouter } from "./routes/billing.js";
+import { stripeWebhookHandler } from "./routes/stripeWebhook.js";
+
+// Load .env file from server directory (must be loaded before reading process.env)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// Try multiple possible paths for .env file
+const envPaths = [
+  join(__dirname, "..", ".env"), // From dist/ or src/ to server/
+  join(process.cwd(), ".env"),   // From current working directory
+  join(__dirname, ".env"),        // Same directory as this file
+];
+for (const envPath of envPaths) {
+  const result = dotenv.config({ path: envPath });
+  if (!result.error) {
+    console.log(`[env] Loaded .env from: ${envPath}`);
+    break;
+  }
+}
+// Also support DOTENV_CONFIG_PATH if explicitly set
+if (process.env.DOTENV_CONFIG_PATH) {
+  dotenv.config({ path: process.env.DOTENV_CONFIG_PATH, override: false });
+}
 
 const PORT = Number(process.env.PORT ?? 4000);
 
@@ -12,6 +38,15 @@ async function bootstrap() {
 
   const app = express();
   
+  // Stripe webhook endpoint:
+  // - Must be defined BEFORE express.json middleware so we can use express.raw
+  // - Uses Stripe's signature verification to ensure integrity
+  app.post(
+    "/api/stripe/webhook",
+    express.raw({ type: "application/json" }),
+    stripeWebhookHandler
+  );
+
   // Health check endpoint (before CORS and middleware - accessible to load balancers)
   // This endpoint MUST return 200 OK quickly for ECS health checks to pass
   app.get("/health", async (_req, res) => {
@@ -72,9 +107,12 @@ async function bootstrap() {
   });
   
   // Configure CORS to allow only Netlify domain
-  const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim())
-    : ["http://localhost:3000"]; // Default for local development
+  // Read ALLOWED_ORIGINS and ensure it's parsed correctly (handle comma-separated values)
+  const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || "";
+  console.log(`[debug] ALLOWED_ORIGINS from env: "${allowedOriginsEnv}"`);
+  const allowedOrigins = allowedOriginsEnv
+    ? allowedOriginsEnv.split(",").map((origin) => origin.trim()).filter(Boolean)
+    : ["http://localhost:3000", "http://localhost:5173"]; // Default for local development (both Vite ports)
   
   console.log(`[cors] Allowed origins: ${allowedOrigins.join(", ")}`);
   
@@ -100,8 +138,11 @@ async function bootstrap() {
   );
   
   app.use(morgan("dev"));
+  // JSON body parser for standard API routes (not Stripe webhooks)
   app.use(express.json());
 
+  // Billing routes (Stripe SetupIntent, subscription status, etc.)
+  app.use("/api/billing", billingRouter);
   app.use("/api/auth", authRouter);
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

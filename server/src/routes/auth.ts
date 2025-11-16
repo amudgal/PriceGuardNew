@@ -47,6 +47,7 @@ authRouter.post("/register", async (req, res, next) => {
     res.status(201).json({
       id: account.id,
       email: account.email,
+      firstName: account.first_name,
       plan: account.plan,
       pastDue: account.past_due,
       cardLast4: account.card_last4,
@@ -71,6 +72,7 @@ authRouter.post("/login", async (req, res, next) => {
     res.json({
       id: account.id,
       email: account.email,
+      firstName: account.first_name,
       plan: account.plan,
       pastDue: account.past_due,
       cardLast4: account.card_last4,

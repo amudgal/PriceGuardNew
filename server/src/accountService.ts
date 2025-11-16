@@ -15,6 +15,7 @@ export interface CreateAccountInput {
 export interface AccountRecord {
   id: string;
   email: string;
+  first_name: string | null;
   plan: string;
   past_due: boolean;
   card_last4: string | null;
@@ -41,7 +42,7 @@ export async function createAccount(input: CreateAccountInput) {
         plan
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (email) DO NOTHING
-      RETURNING id, email, plan, past_due, card_last4`,
+      RETURNING id, email, first_name, plan, past_due, card_last4`,
       [
         input.email,
         passwordHash,
@@ -70,7 +71,7 @@ export async function createAccount(input: CreateAccountInput) {
 export async function authenticateAccount(email: string, password: string) {
   try {
     const result = await query(
-      `SELECT id, email, password_hash, card_last4, plan, past_due
+      `SELECT id, email, first_name, password_hash, card_last4, plan, past_due
        FROM accounts
        WHERE email = $1`,
       [email]
