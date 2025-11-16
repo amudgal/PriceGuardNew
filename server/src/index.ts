@@ -125,10 +125,16 @@ async function bootstrap() {
     ? allowedOriginsEnv.split(",").map((origin) => origin.trim()).filter(Boolean)
     : [];
   
-  // Combine: env origins take precedence, but include defaults if no env set
+  // Combine origins:
+  // - If ALLOWED_ORIGINS is set, use those plus production origins in production
+  // - If not set and production, use defaults + production origins
+  // - If not set and development, use defaults only
+  const isProduction = process.env.NODE_ENV === "production";
   const allowedOrigins = envOrigins.length > 0
-    ? envOrigins
-    : process.env.NODE_ENV === "production"
+    ? isProduction
+      ? [...new Set([...envOrigins, ...productionOrigins])] // Merge and deduplicate
+      : envOrigins
+    : isProduction
     ? [...defaultOrigins, ...productionOrigins]
     : defaultOrigins;
   
