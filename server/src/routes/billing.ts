@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import Stripe from "stripe";
 import { stripe } from "../stripeClient.js";
 import { query, isDatabaseUnavailableError } from "../db.js";
 
@@ -312,7 +313,7 @@ billingRouter.post("/cancel-subscription", async (req, res, next) => {
     }
 
     // Cancel the subscription in Stripe
-    let canceledSubscription;
+    let canceledSubscription: Stripe.Subscription;
     if (body.cancelImmediately) {
       // Cancel immediately - access ends right away
       canceledSubscription = await stripe.subscriptions.cancel(account.stripe_subscription_id);
@@ -343,7 +344,7 @@ billingRouter.post("/cancel-subscription", async (req, res, next) => {
       status: canceledSubscription.status,
       cancelAtPeriodEnd: canceledSubscription.cancel_at_period_end,
       canceledAt: canceledSubscription.canceled_at,
-      currentPeriodEnd: canceledSubscription.current_period_end,
+      currentPeriodEnd: (canceledSubscription as any).current_period_end,
     });
   } catch (error) {
     console.error("[billing] Error cancelling subscription:", error);
@@ -438,7 +439,13 @@ billingRouter.get("/billing-history", async (req, res, next) => {
       .filter((pi) => {
         // Include payment intents that aren't already covered by invoices
         // Or include important statuses like processing, requires_action, etc.
-        return pi.status !== 'succeeded' || !invoices.data.some(inv => inv.payment_intent === pi.id);
+        const invoicePaymentIntent = invoices.data.find(inv => {
+          const invPaymentIntent = (inv as any).payment_intent;
+          return typeof invPaymentIntent === 'string' 
+            ? invPaymentIntent === pi.id 
+            : invPaymentIntent?.id === pi.id;
+        });
+        return pi.status !== 'succeeded' || !invoicePaymentIntent;
       })
       .map((pi) => ({
         id: pi.id,
@@ -461,8 +468,19 @@ billingRouter.get("/billing-history", async (req, res, next) => {
     const chargeTransactions = charges.data
       .filter((charge) => {
         // Include charges that aren't already covered by invoices or payment intents
-        return !invoices.data.some(inv => inv.charge === charge.id) &&
-               !paymentIntents.data.some(pi => pi.id === charge.payment_intent);
+        const invoiceCharge = invoices.data.find(inv => {
+          const invCharge = (inv as any).charge;
+          return typeof invCharge === 'string'
+            ? invCharge === charge.id
+            : invCharge?.id === charge.id;
+        });
+        const paymentIntentCharge = paymentIntents.data.find(pi => {
+          const chargePaymentIntent = (charge as any).payment_intent;
+          return typeof chargePaymentIntent === 'string'
+            ? chargePaymentIntent === pi.id
+            : chargePaymentIntent?.id === pi.id;
+        });
+        return !invoiceCharge && !paymentIntentCharge;
       })
       .map((charge) => ({
         id: charge.id,

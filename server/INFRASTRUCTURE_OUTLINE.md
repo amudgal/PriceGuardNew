@@ -51,6 +51,16 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 │  (Container)     │          │  (Container)    │
 └────────┬─────────┘          └────────┬─────────┘
          │                            │
+         ├────────────────────────────┤
+         │                            │
+         │ HTTPS (API)                │ HTTPS (Webhooks)
+         ▼                            ▼
+┌──────────────┐              ┌──────────────┐
+│   Stripe     │              │   Stripe     │
+│   API        │              │   Webhooks   │
+│ (Payments)   │              │  (Events)    │
+└──────────────┘              └──────────────┘
+         │
          └────────────┬───────────────┘
                       │
                       │ PostgreSQL (SSL)
@@ -75,8 +85,13 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 **Configuration:**
 - Environment Variables:
   - `VITE_API_BASE_URL`: Points to ALB endpoint
+  - `VITE_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key for frontend
+  - `VITE_STRIPE_PRICE_BASIC`: Stripe Price ID for Basic plan (optional)
+  - `VITE_STRIPE_PRICE_PREMIUM`: Stripe Price ID for Premium plan (optional)
+  - `VITE_STRIPE_PRICE_ENTERPRISE`: Stripe Price ID for Enterprise plan (optional)
 - Build: Vite-based React/TypeScript application
 - Deployment: Automatic on git push
+- Payment Processing: Uses Stripe Elements (client-side) for secure card collection
 
 **Location:** External (Netlify CDN)
 
@@ -166,6 +181,8 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 **Secrets (from AWS Secrets Manager):**
 - `DATABASE_URL`: `arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/database-url-gVnioM`
 - `ALLOWED_ORIGINS`: `arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/allowed-origins-yBKnxy`
+- `STRIPE_SECRET_KEY`: Stripe secret API key (from Stripe Dashboard)
+- `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret (for webhook verification)
 
 **Health Check:**
 - **Command:** `wget --no-verbose --tries=1 --spider http://localhost:4000/health?simple=1 || exit 1`
@@ -217,6 +234,16 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 - Stored in AWS Secrets Manager
 - Format: `postgres://user:password@host:port/database?sslmode=verify-full`
 - SSL Certificate: RDS CA bundle included in Docker image
+
+**Database Schema (Stripe Integration):**
+- Additional columns for Stripe integration:
+  - `stripe_customer_id`: Stripe Customer ID
+  - `stripe_default_payment_method_id`: Default payment method ID
+  - `stripe_subscription_id`: Active subscription ID
+  - `subscription_status`: Current subscription status
+  - `stripe_price_id`: Stripe Price ID for the plan
+  - `stripe_latest_invoice_id`: Latest invoice ID
+  - `stripe_latest_invoice_status`: Latest invoice status
 
 **Security:**
 - Accessible only from ECS tasks in VPC
@@ -284,9 +311,158 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
    - **ARN:** `arn:aws:secretsmanager:us-east-1:144935603834:secret:priceguard/allowed-origins-yBKnxy`
    - **Contains:** Comma-separated list of allowed CORS origins (Netlify domains)
 
+3. **Stripe Secret Key:**
+   - **Name:** `priceguard/stripe-secret-key` (if stored in Secrets Manager)
+   - **Contains:** Stripe secret API key (starts with `sk_`)
+   - **Usage:** Server-side Stripe API calls
+
+4. **Stripe Webhook Secret:**
+   - **Name:** `priceguard/stripe-webhook-secret` (if stored in Secrets Manager)
+   - **Contains:** Stripe webhook signing secret (starts with `whsec_`)
+   - **Usage:** Verifying webhook event signatures
+
 ---
 
-### 9. **CloudWatch Logs**
+### 9. **Stripe Payment Integration**
+
+**Service:** Stripe Payment Processing  
+**Integration Type:** API-based payments with webhooks
+
+#### 9.1 Stripe API Integration
+
+**Purpose:**
+- Secure payment method collection (no card data touches our servers)
+- Subscription management
+- Invoice generation and tracking
+- Payment processing
+
+**Client Library:**
+- `stripe` npm package (server-side)
+- `@stripe/react-stripe-js` and `@stripe/stripe-js` (frontend)
+
+**Key Features:**
+- **PCI Compliance:** Card data never touches our servers - handled directly by Stripe Elements
+- **Setup Intents:** Secure method to save payment methods for future use
+- **Subscriptions:** Automatic recurring billing management
+- **Webhooks:** Real-time event notifications for subscription changes
+
+#### 9.2 Stripe Endpoints (Backend)
+
+**Billing Routes:** `/api/billing/*`
+
+1. **POST `/api/billing/create-setup-intent`**
+   - Creates a SetupIntent for saving payment methods
+   - Returns client_secret for frontend Stripe Elements
+   - Automatically creates Stripe Customer if needed
+
+2. **POST `/api/billing/save-payment-method`**
+   - Saves payment method after SetupIntent confirmation
+   - Attaches payment method to Stripe Customer
+   - Sets as default payment method
+   - Stores payment method ID in database
+
+3. **POST `/api/billing/create-subscription`**
+   - Creates a subscription with the saved payment method
+   - Processes immediate payment
+   - Updates subscription status in database
+
+4. **POST `/api/billing/cancel-subscription`**
+   - Cancels subscription (immediately or at period end)
+   - Updates subscription status
+   - Maintains access until period end if canceled at period end
+
+5. **GET `/api/billing/subscription`**
+   - Retrieves current subscription information
+   - Returns plan, status, payment method details
+
+6. **GET `/api/billing/billing-history`**
+   - Fetches invoices, payment intents, and charges from last 12 months
+   - Returns both processed and processing transactions
+   - Includes invoice PDF links and payment status
+
+#### 9.3 Stripe Webhooks
+
+**Endpoint:** `POST /api/stripe/webhook`  
+**Verification:** Signature verification using webhook secret
+
+**Event Types Handled:**
+
+1. **`payment_method.attached`**
+   - Triggered when a payment method is attached to a customer
+   - Updates `stripe_default_payment_method_id` in database
+   - Updates `card_last4` for display
+
+2. **`customer.subscription.created`**
+3. **`customer.subscription.updated`**
+4. **`customer.subscription.deleted`**
+   - Updates subscription status and details in database
+   - Tracks subscription lifecycle changes
+   - Updates `stripe_subscription_id`, `subscription_status`, `stripe_price_id`
+
+5. **`invoice.payment_succeeded`**
+   - Marks account as current (not past due)
+   - Updates latest invoice information
+   - Resets `past_due` flag
+
+6. **`invoice.payment_failed`**
+   - Marks account as past due
+   - Updates invoice status
+   - Sets `past_due` flag to true
+
+**Webhook Configuration:**
+- Webhook URL: `https://api.priceguardbackend.live/api/stripe/webhook`
+- Must be configured in Stripe Dashboard
+- Requires HTTPS endpoint
+- Signature verification ensures events are from Stripe
+
+#### 9.4 Frontend Integration
+
+**Stripe Elements:**
+- Card input handled directly by Stripe.js (no card data to backend)
+- SetupIntent confirmation on frontend
+- Secure tokenization of payment methods
+
+**Components:**
+- `BillingCardForm.tsx`: Secure card collection using Stripe Elements
+- Integrated in Dashboard Account Settings
+- Real-time validation and error handling
+
+#### 9.5 Database Schema (Stripe)
+
+**Accounts Table Extensions:**
+```sql
+ALTER TABLE accounts
+  ADD COLUMN stripe_customer_id TEXT,
+  ADD COLUMN stripe_default_payment_method_id TEXT,
+  ADD COLUMN stripe_subscription_id TEXT,
+  ADD COLUMN subscription_status TEXT,
+  ADD COLUMN stripe_price_id TEXT,
+  ADD COLUMN stripe_latest_invoice_id TEXT,
+  ADD COLUMN stripe_latest_invoice_status TEXT;
+```
+
+#### 9.6 Security & Compliance
+
+**PCI Compliance:**
+- ✅ No card data (PAN, CVV, expiry) stored on our servers
+- ✅ Card data handled directly by Stripe over HTTPS
+- ✅ Payment methods stored as tokens only
+- ✅ Stripe Elements provides PCI-compliant card input
+
+**Data Security:**
+- ✅ Stripe API keys stored as environment variables/secrets
+- ✅ Webhook signature verification prevents unauthorized events
+- ✅ Only last 4 digits of card stored for display purposes
+- ✅ All Stripe API calls use HTTPS
+
+**Access Control:**
+- ✅ Customer creation tied to account email
+- ✅ Payment methods scoped to specific Stripe Customer
+- ✅ Subscription actions require authenticated account
+
+---
+
+### 10. **CloudWatch Logs**
 
 **Log Group:** `/ecs/priceguard-server`  
 **Region:** `us-east-1`  
@@ -305,9 +481,9 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 
 ---
 
-### 10. **IAM Roles & Policies**
+### 11. **IAM Roles & Policies**
 
-#### 10.1 ECS Task Execution Role
+#### 11.1 ECS Task Execution Role
 
 **Name:** `ecsTaskExecutionRole`  
 **ARN:** `arn:aws:iam::144935603834:role/ecsTaskExecutionRole`
@@ -316,7 +492,7 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 - `AmazonECSTaskExecutionRolePolicy` (pull images from ECR)
 - `SecretsManagerReadWrite` (read secrets)
 
-#### 10.2 ECS Task Role
+#### 11.2 ECS Task Role
 
 **Name:** `ecsTaskRole`  
 **ARN:** `arn:aws:iam::144935603834:role/ecsTaskRole`
@@ -324,7 +500,7 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 **Policies:**
 - Application-specific permissions (if needed)
 
-#### 10.3 GitHub Actions IAM User (if configured)
+#### 11.3 GitHub Actions IAM User (if configured)
 
 **Name:** `github-actions-deploy`  
 **Policies:**
@@ -335,7 +511,7 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 
 ---
 
-### 11. **CI/CD Pipeline (GitHub Actions)**
+### 12. **CI/CD Pipeline (GitHub Actions)**
 
 **Workflow File:** `.github/workflows/deploy-backend.yml`
 
@@ -360,6 +536,10 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
 
+**Environment Variables (if needed):**
+- `STRIPE_SECRET_KEY`: For Stripe API operations (if not in Secrets Manager)
+- `STRIPE_WEBHOOK_SECRET`: For webhook verification (if not in Secrets Manager)
+
 ---
 
 ## 🔄 Data Flow
@@ -377,6 +557,32 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 9. **Application** → Returns JSON response
 10. **ALB** → Returns response to frontend
 11. **Frontend** → Displays data to user
+
+### Payment Flow (Stripe):
+
+1. **User** → Enters card details in frontend (Stripe Elements)
+2. **Frontend** → Creates SetupIntent via `/api/billing/create-setup-intent`
+3. **Backend** → Creates SetupIntent in Stripe API
+4. **Backend** → Returns client_secret to frontend
+5. **Frontend** → Confirms SetupIntent with Stripe.js (card data goes directly to Stripe)
+6. **Stripe** → Validates card and returns payment method ID
+7. **Frontend** → Calls `/api/billing/save-payment-method` with payment method ID
+8. **Backend** → Attaches payment method to Stripe Customer, saves to database
+9. **Frontend** → Calls `/api/billing/create-subscription` (if plan selected)
+10. **Backend** → Creates subscription in Stripe, processes payment
+11. **Stripe** → Sends webhook events (`subscription.created`, `invoice.payment_succeeded`)
+12. **Backend** → Webhook handler updates database with subscription status
+13. **Frontend** → Displays subscription confirmation
+
+### Webhook Flow (Stripe Events):
+
+1. **Stripe** → Event occurs (subscription change, payment, etc.)
+2. **Stripe** → Sends POST request to `/api/stripe/webhook` endpoint
+3. **ALB** → Routes webhook request to ECS task
+4. **Backend** → Verifies webhook signature using webhook secret
+5. **Backend** → Processes event type (subscription, invoice, payment_method)
+6. **Backend** → Updates database with latest subscription/payment status
+7. **Backend** → Returns 200 OK to acknowledge receipt
 
 ### Health Check Flow:
 
@@ -401,7 +607,10 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 - ✅ Secrets stored in AWS Secrets Manager (not in code)
 - ✅ CORS configured to allow only Netlify domains
 - ✅ Passwords hashed with Argon2id
-- ✅ Credit card tokens stored securely
+- ✅ Payment processing via Stripe (PCI compliant - no card data stored)
+- ✅ Stripe API keys stored as secrets/environment variables
+- ✅ Webhook signature verification prevents unauthorized events
+- ✅ Only last 4 digits of card stored for display (never full card number)
 - ✅ Environment variables for sensitive config
 
 ### Access Control:
@@ -460,8 +669,17 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 - **HTTPS (Custom Domain):** `https://api.priceguardbackend.live` (pending DNS setup)
 - **Health Check:** `/health`
 - **Auth Endpoints:**
-  - `POST /api/auth/register`
-  - `POST /api/auth/login`
+  - `POST /api/auth/register` - Register new account
+  - `POST /api/auth/login` - Authenticate user
+
+- **Billing Endpoints:**
+  - `POST /api/billing/create-setup-intent` - Create SetupIntent for saving payment methods
+  - `POST /api/billing/save-payment-method` - Save payment method after confirmation
+  - `POST /api/billing/create-subscription` - Create subscription with saved payment method
+  - `POST /api/billing/cancel-subscription` - Cancel subscription (immediate or at period end)
+  - `GET /api/billing/subscription?email=...` - Get subscription information
+  - `GET /api/billing/billing-history?email=...` - Get billing history (last 12 months)
+  - `POST /api/stripe/webhook` - Stripe webhook endpoint for event processing
 
 ### Management Console Links:
 - **ECS Cluster:** https://console.aws.amazon.com/ecs/v2/clusters/priceguard-cluster
@@ -484,7 +702,10 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 - `src/index.ts` - Express server setup
 - `src/db.ts` - Database connection with SSL
 - `src/routes/auth.ts` - Authentication endpoints
-- `src/migrations.ts` - Database schema
+- `src/routes/billing.ts` - Billing and subscription endpoints
+- `src/routes/stripeWebhook.ts` - Stripe webhook event handler
+- `src/stripeClient.ts` - Stripe API client initialization
+- `src/migrations.ts` - Database schema (includes Stripe columns)
 
 ---
 
@@ -526,6 +747,12 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 - ✅ Database: Connected (with SSL)
 - ✅ CI/CD: Configured and working
 - ✅ Logging: Active in CloudWatch
+- ✅ Stripe Integration: Fully implemented
+  - ✅ Payment method management
+  - ✅ Subscription creation and cancellation
+  - ✅ Billing history tracking
+  - ✅ Webhook event processing
+  - ✅ Frontend integration with Stripe Elements
 
 ---
 
@@ -534,11 +761,63 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 1. **Set up HTTPS Listener** on ALB with SSL certificate
 2. **Configure DNS** in Netlify to point `api.priceguardbackend.live` to ALB
 3. **Update Frontend** environment variable to use HTTPS URL
-4. **Set up CloudWatch Alarms** for monitoring
-5. **Enable Auto Scaling** if needed
-6. **Set up WAF** for additional security (optional)
+4. **Configure Stripe Webhook** in Stripe Dashboard:
+   - Webhook URL: `https://api.priceguardbackend.live/api/stripe/webhook`
+   - Events to listen: `payment_method.attached`, `customer.subscription.*`, `invoice.payment_*`
+   - Copy webhook secret to Secrets Manager
+5. **Set up CloudWatch Alarms** for monitoring (including Stripe webhook failures)
+6. **Enable Auto Scaling** if needed
+7. **Set up WAF** for additional security (optional)
+8. **Configure Stripe Price IDs** in environment variables for subscription plans
 
 ---
 
-*Last Updated: November 15, 2025*
+## 💳 Stripe Configuration
+
+### Required Stripe Keys
+
+**Frontend (Netlify Environment Variables):**
+- `VITE_STRIPE_PUBLISHABLE_KEY`: Publishable key (starts with `pk_`)
+- `VITE_STRIPE_PRICE_BASIC`: Price ID for Basic plan (optional)
+- `VITE_STRIPE_PRICE_PREMIUM`: Price ID for Premium plan (optional)
+- `VITE_STRIPE_PRICE_ENTERPRISE`: Price ID for Enterprise plan (optional)
+
+**Backend (AWS Secrets Manager or Environment Variables):**
+- `STRIPE_SECRET_KEY`: Secret key (starts with `sk_`)
+- `STRIPE_WEBHOOK_SECRET`: Webhook signing secret (starts with `whsec_`)
+
+### Stripe Dashboard Setup
+
+1. **Create Products and Prices:**
+   - Create products for each plan (Basic, Premium, Enterprise)
+   - Create recurring prices (monthly/yearly)
+   - Copy Price IDs to environment variables
+
+2. **Configure Webhook:**
+   - URL: `https://api.priceguardbackend.live/api/stripe/webhook`
+   - Events: Select required events (subscription, invoice, payment_method)
+   - Copy webhook signing secret
+
+3. **Test Mode vs Production:**
+   - Use test keys during development
+   - Switch to live keys for production
+   - Test webhooks using Stripe CLI
+
+### Stripe API Usage
+
+**Client-Side (Frontend):**
+- Stripe.js loaded via CDN or npm package
+- Stripe Elements for secure card input
+- No card data sent to our servers
+
+**Server-Side (Backend):**
+- Stripe Node.js SDK for API calls
+- Customer management
+- Subscription lifecycle
+- Invoice and payment tracking
+- Webhook signature verification
+
+---
+
+*Last Updated: December 2024*
 
