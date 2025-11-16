@@ -34,7 +34,20 @@ if (process.env.DOTENV_CONFIG_PATH) {
 const PORT = Number(process.env.PORT ?? 4000);
 
 async function bootstrap() {
-  await runMigrations();
+  console.log("[bootstrap] Starting server...");
+  
+  // Run migrations - server can still start if migrations fail (database might be temporarily unavailable)
+  try {
+    const migrationsSuccess = await runMigrations();
+    if (migrationsSuccess) {
+      console.log("[bootstrap] Migrations completed successfully");
+    } else {
+      console.warn("[bootstrap] Migrations skipped - database unavailable (server will start but DB operations may fail)");
+    }
+  } catch (error) {
+    console.error("[bootstrap] Error during migrations:", error);
+    console.warn("[bootstrap] Continuing server startup despite migration errors");
+  }
 
   const app = express();
   
@@ -192,11 +205,17 @@ async function bootstrap() {
   });
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server listening on port ${PORT} on 0.0.0.0`);
+    console.log(`[server] Server listening on port ${PORT} on 0.0.0.0`);
+    console.log(`[server] Health check endpoint: http://0.0.0.0:${PORT}/health`);
+    console.log(`[server] API endpoints: http://0.0.0.0:${PORT}/api/*`);
   });
 }
 
 bootstrap().catch((error) => {
-  console.error("Failed to start server", error);
+  console.error("[bootstrap] Failed to start server:", error);
+  if (error instanceof Error) {
+    console.error("[bootstrap] Error message:", error.message);
+    console.error("[bootstrap] Error stack:", error.stack);
+  }
   process.exit(1);
 });
