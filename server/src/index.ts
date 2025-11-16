@@ -125,18 +125,20 @@ async function bootstrap() {
     ? allowedOriginsEnv.split(",").map((origin) => origin.trim()).filter(Boolean)
     : [];
   
-  // Combine origins:
-  // - If ALLOWED_ORIGINS is set, use those plus production origins in production
-  // - If not set and production, use defaults + production origins
-  // - If not set and development, use defaults only
+  // Combine origins intelligently:
+  // - In development: always include default localhost origins (both 3000 and 5173), merge with env origins
+  // - In production: always include production origins, merge with env origins and defaults
+  // - This ensures both environments work regardless of ALLOWED_ORIGINS setting
   const isProduction = process.env.NODE_ENV === "production";
-  const allowedOrigins = envOrigins.length > 0
-    ? isProduction
-      ? [...new Set([...envOrigins, ...productionOrigins])] // Merge and deduplicate
-      : envOrigins
-    : isProduction
-    ? [...defaultOrigins, ...productionOrigins]
-    : defaultOrigins;
+  
+  let allowedOrigins: string[];
+  if (isProduction) {
+    // Production: merge env origins + default origins + production origins
+    allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins, ...productionOrigins])];
+  } else {
+    // Development: merge env origins + default origins (always allow both localhost ports)
+    allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
+  }
   
   console.log(`[cors] Allowed origins: ${allowedOrigins.join(", ")}`);
   console.log(`[cors] Node environment: ${process.env.NODE_ENV || "development"}`);
