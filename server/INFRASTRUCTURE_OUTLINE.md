@@ -8,7 +8,7 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         INTERNET                                 │
+│                         INTERNET                                │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
         ┌───────────────────┴───────────────────┐
@@ -16,8 +16,9 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
         ▼                                       ▼
 ┌───────────────┐                      ┌──────────────────┐
 │   Netlify     │                      │   Custom Domain  │
-│  Frontend     │                      │ priceguardbackend│
-│  (Static)     │                      │     .live        │
+│  Frontend     │                      │ api.priceguard   │
+│  (Static)     │                      │ backend.live     │
+│  (Vite/React) │                      │  (ALB Endpoint)  │
 └───────┬───────┘                      └────────┬─────────┘
         │                                       │
         │ HTTPS                                 │ HTTPS
@@ -45,31 +46,23 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
         ┌───────────────┴───────────────┐
         │                               │
         ▼                               ▼
-┌──────────────────┐          ┌──────────────────┐
-│   ECS Fargate    │          │   ECS Fargate    │
-│   Task 1         │          │   Task 2         │
-│  (Container)     │          │  (Container)    │
-└────────┬─────────┘          └────────┬─────────┘
-         │                            │
-         ├────────────────────────────┤
-         │                            │
-         │ HTTPS (API)                │ HTTPS (Webhooks)
-         ▼                            ▼
+┌──────────────────┐          ┌──────────────────┐                     ┌──────────────────────┐
+│   ECS Fargate    │          │   ECS Fargate    │   PostgreSQL (SSL)  │   RDS PostgreSQL     │
+│   Task 1         │          │   Task 2         │──────────────────── │   Database           │
+│  (Container)     │          │  (Container)     │   Port 5432         │   pg-dev.cy7sig6... │
+│  Port 4000       │          │  Port 4000       │                     │   Database: appdb   │
+└────────┬─────────┘          └────────┬─────────┘                     └──────────────────────┘
+         │                             │
+         ├─────────────────────────────┤
+         │                             │
+         │ HTTPS (API)                 │ HTTPS (Webhooks)
+         ▼                             ▼
 ┌──────────────┐              ┌──────────────┐
 │   Stripe     │              │   Stripe     │
 │   API        │              │   Webhooks   │
 │ (Payments)   │              │  (Events)    │
 └──────────────┘              └──────────────┘
-         │
-         └────────────┬───────────────┘
-                      │
-                      │ PostgreSQL (SSL)
-                      │
-                      ▼
-         ┌──────────────────────┐
-         │   RDS PostgreSQL     │
-         │   Database           │
-         └──────────────────────┘
+    
 ```
 
 ---
@@ -108,9 +101,10 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 **Listeners:**
 - **HTTP (Port 80):** Active
   - Forwards to target group
-- **HTTPS (Port 443):** Pending SSL certificate setup
+- **HTTPS (Port 443):** Active ✅
   - Certificate: `arn:aws:acm:us-east-1:144935603834:certificate/21664430-e1db-449b-9dfe-a900c96a2b28`
-  - Domain: `api.priceguardbackend.live` (Status: ISSUED)
+  - Domain: `api.priceguardbackend.live` (Status: ISSUED ✅)
+  - Forwards to target group
 
 **Target Group:**
 - **Name:** `priceguard-targets`
@@ -739,11 +733,11 @@ ALTER TABLE accounts
 ## ✅ Current Status
 
 - ✅ ECS Cluster: Active
-- ✅ ECS Service: Running (1 task)
-- ✅ ALB: Active with HTTP listener
+- ✅ ECS Service: Running (1 task, can scale to 2+ for HA)
+- ✅ ALB: Active with HTTP and HTTPS listeners
 - ✅ Target Group: Healthy targets
 - ✅ SSL Certificate: Issued for `api.priceguardbackend.live`
-- ⚠️ HTTPS Listener: Pending setup
+- ✅ HTTPS Listener: Active (Port 443)
 - ✅ Database: Connected (with SSL)
 - ✅ CI/CD: Configured and working
 - ✅ Logging: Active in CloudWatch
