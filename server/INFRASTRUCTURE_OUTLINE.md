@@ -49,8 +49,8 @@ Complete overview of the AWS infrastructure setup for PriceGuard application.
 ┌──────────────────┐          ┌──────────────────┐                     ┌──────────────────────┐
 │   ECS Fargate    │          │   ECS Fargate    │   PostgreSQL (SSL)  │   RDS PostgreSQL     │
 │   Task 1         │          │   Task 2         │──────────────────── │   Database           │
-│  (Container)     │          │  (Container)     │   Port 5432         │   pg-dev.cy7sig6... │
-│  Port 4000       │          │  Port 4000       │                     │   Database: appdb   │
+│  (Container)     │          │  (Container)     │   Port 5432         │   pg-dev.cy7sig6...  │
+│  Port 4000       │          │  Port 4000       │                     │   Database: appdb    │
 └────────┬─────────┘          └────────┬─────────┘                     └──────────────────────┘
          │                             │
          ├─────────────────────────────┤
