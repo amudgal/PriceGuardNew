@@ -75,26 +75,62 @@ if (process.env.PGSSLMODE !== "disable") {
 
 // Parse and fix DATABASE_URL to handle special characters in password (e.g., #, @, :)
 // The pg-connection-string library uses new URL() which breaks if password contains #
+// Also remove SSL parameters from DATABASE_URL as we handle SSL via PGSSLMODE and PGSSLROOTCERT
 let connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
   throw new Error("DATABASE_URL environment variable is required");
 }
 
-// Fix DATABASE_URL if it contains unencoded special characters in password
-// Extract components and reconstruct with proper encoding
+// Fix DATABASE_URL:
+// 1. Remove SSL-related query parameters (sslmode, sslrootcert, etc.) to avoid conflicts
+// 2. URL-encode password to handle special characters like #
 try {
-  // Try to parse as URL first
-  const urlMatch = connectionString.match(/^postgres:\/\/([^:]+):([^@]+)@([^\/]+)\/(.+)$/);
-  if (urlMatch) {
-    const [, username, password, host, database] = urlMatch;
-    // Reconstruct with URL-encoded password to handle special characters like #
-    const encodedPassword = encodeURIComponent(password);
-    connectionString = `postgres://${username}:${encodedPassword}@${host}/${database}`;
-    console.log(`[db] Fixed DATABASE_URL to handle special characters in password`);
-  }
+  // Try to parse as URL first to remove SSL parameters
+  const url = new URL(connectionString);
+  
+  // Extract components
+  const username = url.username;
+  const password = url.password;
+  const host = url.hostname;
+  const port = url.port || '5432';
+  const database = url.pathname.replace(/^\//, ''); // Remove leading /
+  
+  // Remove SSL-related query parameters that conflict with our SSL config
+  url.searchParams.delete('sslmode');
+  url.searchParams.delete('ssl');
+  url.searchParams.delete('sslcert');
+  url.searchParams.delete('sslkey');
+  url.searchParams.delete('sslrootcert');
+  url.searchParams.delete('sslcertmode');
+  
+  // Reconstruct URL with encoded password (to handle special characters like #)
+  const encodedPassword = encodeURIComponent(password);
+  const queryString = url.search ? url.search : '';
+  
+  // Reconstruct connection string without SSL params, with encoded password
+  connectionString = `postgres://${username}:${encodedPassword}@${host}:${port}/${database}${queryString}`;
+  
+  console.log(`[db] Fixed DATABASE_URL: removed SSL parameters and encoded password`);
 } catch (error) {
-  // If parsing fails, use as-is
-  console.warn(`[db] Could not parse DATABASE_URL format, using as-is: ${error instanceof Error ? error.message : String(error)}`);
+  // If URL parsing fails, try regex parsing (fallback for malformed URLs)
+  try {
+    const urlMatch = connectionString.match(/^postgres:\/\/([^:]+):([^@]+)@([^\/]+)\/(.+?)(\?.*)?$/);
+    if (urlMatch) {
+      const [, username, password, host, database, queryString = ''] = urlMatch;
+      
+      // Remove SSL parameters from query string
+      const cleanQuery = queryString.replace(/[?&](sslmode|ssl|sslcert|sslkey|sslrootcert|sslcertmode)=[^&]*/g, '');
+      
+      // Reconstruct with URL-encoded password
+      const encodedPassword = encodeURIComponent(password);
+      connectionString = `postgres://${username}:${encodedPassword}@${host}/${database}${cleanQuery}`;
+      
+      console.log(`[db] Fixed DATABASE_URL using regex: removed SSL parameters and encoded password`);
+    }
+  } catch (regexError) {
+    // If both parsing methods fail, use as-is but warn
+    console.warn(`[db] Could not parse DATABASE_URL format, using as-is: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export const pool = new Pool({
