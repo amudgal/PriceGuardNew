@@ -4,6 +4,10 @@
   import "./index.css";
   import { Elements } from "@stripe/react-stripe-js";
   import { loadStripe } from "@stripe/stripe-js";
+  import { setupPayPalDebug } from "./utils/paypalDebug";
+
+  // Setup PayPal debug utilities for browser console
+  setupPayPalDebug();
 
   const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
 

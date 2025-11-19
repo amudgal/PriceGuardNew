@@ -187,3 +187,49 @@
 html {
   font-size: var(--font-size);
 }
+
+/* PayPal SDK z-index fix - ensure PayPal elements don't overlap header */
+/* Header has z-50 (sticky top-0), so PayPal elements should be lower */
+
+/* PayPal button containers */
+[data-paypal-button-container-id],
+[id*="paypal-button-container"],
+[id*="paypal-button"],
+.paypal-button-container {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* PayPal iframes (buttons, modals, etc.) */
+iframe[src*="paypal.com"],
+iframe[src*="paypalobjects.com"] {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* PayPal SDK injected divs and containers */
+body > [id*="paypal"]:not([id*="paypal-modal"]):not([id*="paypal-overlay"]),
+body > [class*="paypal"]:not([class*="paypal-modal"]):not([class*="paypal-overlay"]) {
+  z-index: 1 !important;
+}
+
+/* PayPal modals/overlays should still work but be below header when header is visible */
+[id*="paypal-modal"],
+[id*="paypal-overlay"],
+[class*="paypal-modal"],
+[class*="paypal-overlay"] {
+  z-index: 40 !important; /* Below header (z-50) but above content */
+}
+
+/* Header should always be on top when sticky */
+header,
+[role="banner"],
+.bg-\[#3D3D3D\] {
+  z-index: 50 !important;
+  position: relative;
+}
+
+/* Ensure sticky header stays on top */
+.sticky {
+  z-index: 50 !important;
+}

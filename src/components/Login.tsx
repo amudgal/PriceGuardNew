@@ -8,6 +8,7 @@ import { Badge } from "./ui/badge";
 import { Check, ShoppingCart, ArrowLeft, Shield, CreditCard } from "lucide-react";
 import { Alert, AlertDescription } from "./ui/alert";
 import { API_ENDPOINTS, API_BASE_URL } from "../config/api";
+import { PayPalButton } from "./PayPalButton";
 
 interface UserData {
   id: string;
@@ -74,6 +75,8 @@ const plans = [
 export function Login({ onBack, onLoginSuccess }: LoginProps) {
   const [selectedPlan, setSelectedPlan] = React.useState<string>("");
   const [termsAccepted, setTermsAccepted] = React.useState(false);
+  const [paymentMethod, setPaymentMethod] = React.useState<"card" | "paypal">("card");
+  const [paypalPaymentCompleted, setPaypalPaymentCompleted] = React.useState(false);
   const [cardNumber, setCardNumber] = React.useState("");
   const [firstName, setFirstName] = React.useState("");
   const [signupEmail, setSignupEmail] = React.useState("");
@@ -120,6 +123,8 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
     setCvv("");
     setTermsAccepted(false);
     setSelectedPlan("");
+    setPaymentMethod("card");
+    setPaypalPaymentCompleted(false);
   }, []);
 
   const handleSignup = React.useCallback(
@@ -142,44 +147,60 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
         return;
       }
 
+      // Validate payment method
+      if (paymentMethod === "card") {
+        const sanitizedCardNumber = cardNumber.replace(/\s/g, "");
+        if (!sanitizedCardNumber) {
+          setSignupError("Please enter a valid credit card number.");
+          return;
+        }
+
+        if (!expiry.includes("/")) {
+          setSignupError("Please enter the expiration date in MM/YY format.");
+          return;
+        }
+
+        const [monthStr, yearStr] = expiry.split("/");
+        const expiryMonth = Number(monthStr);
+        let expiryYear = Number(yearStr);
+        if (yearStr.length === 2) {
+          expiryYear += 2000;
+        }
+
+        if (
+          !expiryMonth ||
+          !expiryYear ||
+          expiryMonth < 1 ||
+          expiryMonth > 12 ||
+          expiryYear < new Date().getFullYear()
+        ) {
+          setSignupError("Please enter a valid expiration date.");
+          return;
+        }
+      } else if (paymentMethod === "paypal") {
+        if (!paypalPaymentCompleted) {
+          setSignupError("Please complete PayPal payment before creating your account.");
+          return;
+        }
+      }
+
       const sanitizedCardNumber = cardNumber.replace(/\s/g, "");
-      if (!sanitizedCardNumber) {
-        setSignupError("Please enter a valid credit card number.");
-        return;
-      }
-
-      if (!expiry.includes("/")) {
-        setSignupError("Please enter the expiration date in MM/YY format.");
-        return;
-      }
-
-      const [monthStr, yearStr] = expiry.split("/");
+      const [monthStr, yearStr] = expiry.includes("/") ? expiry.split("/") : ["", ""];
       const expiryMonth = Number(monthStr);
       let expiryYear = Number(yearStr);
       if (yearStr.length === 2) {
         expiryYear += 2000;
       }
 
-      if (
-        !expiryMonth ||
-        !expiryYear ||
-        expiryMonth < 1 ||
-        expiryMonth > 12 ||
-        expiryYear < new Date().getFullYear()
-      ) {
-        setSignupError("Please enter a valid expiration date.");
-        return;
-      }
-
       const payload = {
         email: signupEmail,
         password: signupPassword,
         firstName: firstName.trim() || null,
-        creditCardToken: `tok_${sanitizedCardNumber}`,
-        cardLast4: sanitizedCardNumber.slice(-4),
+        creditCardToken: paymentMethod === "card" ? `tok_${sanitizedCardNumber}` : null,
+        cardLast4: paymentMethod === "card" ? sanitizedCardNumber.slice(-4) : null,
         billingZip: billingZip || null,
-        expiryMonth,
-        expiryYear,
+        expiryMonth: paymentMethod === "card" ? expiryMonth : null,
+        expiryYear: paymentMethod === "card" ? expiryYear : null,
         plan: selectedPlan,
       };
 
@@ -375,79 +396,159 @@ export function Login({ onBack, onLoginSuccess }: LoginProps) {
                         <div className="border-t pt-4 mt-4 space-y-4">
                           <div className="flex items-center justify-between">
                             <Label className="text-base">Payment Information</Label>
-                            <div className="flex items-center gap-2">
-                              <div className="h-8 w-12 bg-white border border-gray-200 rounded flex items-center justify-center">
-                                <svg viewBox="0 0 48 32" className="h-5 w-8">
-                                  <rect width="48" height="32" rx="4" fill="#fff" />
-                                  <path d="M20.5 11.5l-2.5 9h-2l-2.5-9h2l1.5 6.5 1.5-6.5h2zm3 0h1.5l-1.5 9h-1.5l1.5-9zm5.5 0l-1 9h-1.5l1-9h1.5zm3 0h1.5l.5 6.5 1-6.5h1.5l-1.5 9h-2l-.5-6.5-1 6.5h-1.5l1.5-9z" fill="#1434CB" />
-                                </svg>
-                              </div>
-                              <div className="h-8 w-12 bg-white border border-gray-200 rounded flex items-center justify-center">
-                                <svg viewBox="0 0 48 32" className="h-5 w-8">
-                                  <circle cx="18" cy="16" r="8" fill="#EB001B" />
-                                  <circle cx="30" cy="16" r="8" fill="#F79E1B" />
-                                  <path d="M24 10.5a8 8 0 000 11 8 8 0 000-11z" fill="#FF5F00" />
-                                </svg>
-                              </div>
-                              <div className="h-8 w-12 bg-[#006FCF] border border-gray-200 rounded flex items-center justify-center px-1">
-                                <span className="text-white text-[8px] font-bold tracking-tight">AMEX</span>
-                              </div>
-                            </div>
                           </div>
 
-                          <div>
-                            <Label htmlFor="cardNumber">Card Number</Label>
-                            <div className="relative">
-                              <Input
-                                id="cardNumber"
-                                name="cardNumber"
-                                placeholder="1234 5678 9012 3456"
-                                value={cardNumber}
-                                onChange={handleCardNumberChange}
-                                maxLength={19}
-                                required
-                              />
-                              <CreditCard className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                          {/* Payment Method Selector */}
+                          <div className="space-y-4">
+                            <div className="flex gap-2 border rounded-lg p-1 bg-gray-50">
+                              <button
+                                type="button"
+                                onClick={() => setPaymentMethod("card")}
+                                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                                  paymentMethod === "card"
+                                    ? "bg-white text-[#E91E8C] shadow-sm"
+                                    : "text-gray-600 hover:text-gray-900"
+                                }`}
+                              >
+                                Credit Card
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPaymentMethod("paypal")}
+                                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                                  paymentMethod === "paypal"
+                                    ? "bg-white text-[#E91E8C] shadow-sm"
+                                    : "text-gray-600 hover:text-gray-900"
+                                }`}
+                              >
+                                PayPal
+                              </button>
                             </div>
-                          </div>
 
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <Label htmlFor="expiry">Expiration Date</Label>
-                              <Input
-                                id="expiry"
-                                name="expiry"
-                                placeholder="MM/YY"
-                                maxLength={5}
-                                value={expiry}
-                                onChange={handleExpiryChange}
-                                required
-                              />
-                            </div>
-                            <div>
-                              <Label htmlFor="cvv">CVV</Label>
-                              <Input
-                                id="cvv"
-                                name="cvv"
-                                placeholder="123"
-                                maxLength={4}
-                                type="password"
-                                value={cvv}
-                                onChange={(e) => setCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                                required
-                              />
-                            </div>
-                          </div>
+                            {/* Credit Card Payment */}
+                            {paymentMethod === "card" && (
+                              <div className="space-y-4">
+                              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                                <p className="text-xs text-amber-900">
+                                  <strong>Credit Card Processing Fee:</strong> We charge a processing fee of 30¢ + 2.9% of the transaction amount for credit card payments.
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="h-8 w-12 bg-white border border-gray-200 rounded flex items-center justify-center">
+                                  <svg viewBox="0 0 48 32" className="h-5 w-8">
+                                    <rect width="48" height="32" rx="4" fill="#fff" />
+                                    <path d="M20.5 11.5l-2.5 9h-2l-2.5-9h2l1.5 6.5 1.5-6.5h2zm3 0h1.5l-1.5 9h-1.5l1.5-9zm5.5 0l-1 9h-1.5l1-9h1.5zm3 0h1.5l.5 6.5 1-6.5h1.5l-1.5 9h-2l-.5-6.5-1 6.5h-1.5l1.5-9z" fill="#1434CB" />
+                                  </svg>
+                                </div>
+                                <div className="h-8 w-12 bg-white border border-gray-200 rounded flex items-center justify-center">
+                                  <svg viewBox="0 0 48 32" className="h-5 w-8">
+                                    <circle cx="18" cy="16" r="8" fill="#EB001B" />
+                                    <circle cx="30" cy="16" r="8" fill="#F79E1B" />
+                                    <path d="M24 10.5a8 8 0 000 11 8 8 0 000-11z" fill="#FF5F00" />
+                                  </svg>
+                                </div>
+                                <div className="h-8 w-12 bg-[#006FCF] border border-gray-200 rounded flex items-center justify-center px-1">
+                                  <span className="text-white text-[8px] font-bold tracking-tight">AMEX</span>
+                                </div>
+                              </div>
 
-                          <div>
-                            <Label htmlFor="billingZip">Billing ZIP / Postal Code</Label>
-                            <Input
-                              id="billingZip"
-                              name="billingZip"
-                              placeholder="94016"
-                              value={billingZip}
-                              onChange={(e) => setBillingZip(e.target.value)}
-                            />
+                              <div>
+                                <Label htmlFor="cardNumber">Card Number</Label>
+                                <div className="relative">
+                                  <Input
+                                    id="cardNumber"
+                                    name="cardNumber"
+                                    placeholder="1234 5678 9012 3456"
+                                    value={cardNumber}
+                                    onChange={handleCardNumberChange}
+                                    maxLength={19}
+                                    required={paymentMethod === "card"}
+                                  />
+                                  <CreditCard className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <Label htmlFor="expiry">Expiration Date</Label>
+                                  <Input
+                                    id="expiry"
+                                    name="expiry"
+                                    placeholder="MM/YY"
+                                    maxLength={5}
+                                    value={expiry}
+                                    onChange={handleExpiryChange}
+                                    required={paymentMethod === "card"}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor="cvv">CVV</Label>
+                                  <Input
+                                    id="cvv"
+                                    name="cvv"
+                                    placeholder="123"
+                                    maxLength={4}
+                                    type="password"
+                                    value={cvv}
+                                    onChange={(e) => setCvv(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                                    required={paymentMethod === "card"}
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <Label htmlFor="billingZip">Billing ZIP / Postal Code</Label>
+                                <Input
+                                  id="billingZip"
+                                  name="billingZip"
+                                  placeholder="94016"
+                                  value={billingZip}
+                                  onChange={(e) => setBillingZip(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                            )}
+
+                            {/* PayPal Payment */}
+                            {paymentMethod === "paypal" && (
+                              <div className="space-y-4">
+                              {signupEmail ? (
+                                <div className="space-y-3">
+                                  <p className="text-sm text-gray-600">
+                                    Pay securely with PayPal. You'll complete payment after creating your account.
+                                  </p>
+                                  {paypalPaymentCompleted ? (
+                                    <Alert className="bg-green-50 border-green-200">
+                                      <Check className="h-4 w-4 text-green-600" />
+                                      <AlertDescription className="text-green-900">
+                                        PayPal payment completed! You can now create your account.
+                                      </AlertDescription>
+                                    </Alert>
+                                  ) : (
+                                    <PayPalButton
+                                      email={signupEmail}
+                                      amount={selectedPlan === "basic" ? 0.45 : selectedPlan === "intermediate" ? 1.99 : selectedPlan === "premium" ? 2.99 : 0}
+                                      currency="USD"
+                                      description={`PriceGuard ${selectedPlan} plan - Annual subscription`}
+                                      onCompleted={() => {
+                                        setPaypalPaymentCompleted(true);
+                                        setSignupError(null);
+                                      }}
+                                      onError={(error) => {
+                                        setSignupError(`PayPal payment failed: ${error}`);
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              ) : (
+                                <Alert>
+                                  <AlertDescription>
+                                    Please enter your email address above first to enable PayPal payment.
+                                  </AlertDescription>
+                                </Alert>
+                              )}
+                            </div>
+                            )}
                           </div>
                         </div>
 

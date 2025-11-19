@@ -30,6 +30,7 @@ export const BillingCardForm: React.FC<BillingCardFormProps> = ({
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
+  const [isCardComplete, setIsCardComplete] = React.useState(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -195,6 +196,14 @@ export const BillingCardForm: React.FC<BillingCardFormProps> = ({
                 },
               },
             }}
+            onChange={(e) => {
+              // Enable button only when card is complete and valid
+              setIsCardComplete(e.complete && !e.error);
+              // Clear error when user starts typing
+              if (e.complete && !e.error) {
+                setError(null);
+              }
+            }}
           />
         </div>
         <p className="text-xs text-muted-foreground">
@@ -214,7 +223,7 @@ export const BillingCardForm: React.FC<BillingCardFormProps> = ({
         </Alert>
       )}
 
-      <Button type="submit" disabled={isSubmitting || !stripe} className="w-full">
+      <Button type="submit" disabled={isSubmitting || !stripe || !isCardComplete} className="w-full">
         {isSubmitting ? "Saving card securely..." : "Save Card"}
       </Button>
     </form>

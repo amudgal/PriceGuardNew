@@ -41,6 +41,7 @@ import {
 } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { BillingCardForm } from "./BillingCardForm";
+import { PayPalButton } from "./PayPalButton";
 import { API_ENDPOINTS } from "../config/api";
 
 interface UserData {
@@ -74,41 +75,7 @@ const categoryData = [
   { name: "Clothing", value: 140, color: "#95135A" },
 ];
 
-const monitoredProducts = [
-  {
-    id: 1,
-    name: "Samsung 65 inch 4K Smart TV",
-    currentPrice: 799.99,
-    originalPrice: 899.99,
-    purchaseDate: "2024-10-01",
-    daysRemaining: 15,
-    status: "monitoring",
-    potentialSavings: 0,
-    lastChecked: "2 mins ago",
-  },
-  {
-    id: 2,
-    name: "Dyson V15 Vacuum Cleaner",
-    currentPrice: 549.99,
-    originalPrice: 599.99,
-    purchaseDate: "2024-10-05",
-    daysRemaining: 19,
-    status: "price-drop",
-    potentialSavings: 50,
-    lastChecked: "5 mins ago",
-  },
-  {
-    id: 3,
-    name: "Kirkland Organic Olive Oil 2L",
-    currentPrice: 19.99,
-    originalPrice: 19.99,
-    purchaseDate: "2024-09-28",
-    daysRemaining: 8,
-    status: "monitoring",
-    potentialSavings: 0,
-    lastChecked: "1 min ago",
-  },
-];
+// Mock data removed - products are now loaded from database via API
 
 export function Dashboard({ onLogout, userData }: DashboardProps) {
   console.log("Dashboard userData:", userData); // Debug: Check what Dashboard receives
@@ -124,6 +91,38 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   const [isAddProductOpen, setIsAddProductOpen] = React.useState(false);
   const [showProductIdHelp, setShowProductIdHelp] = React.useState(false);
   const [showClaimHelp, setShowClaimHelp] = React.useState(false);
+  
+  // Products state
+  const [monitoredProducts, setMonitoredProducts] = React.useState<Array<{
+    id: string;
+    productName: string;
+    productId: string;
+    purchasePrice: number | null;
+    purchaseDate: string | null;
+    category: string | null;
+    receiptUrl: string | null;
+    createdAt: string;
+    updatedAt: string;
+    currentPrice: number | null;
+    observedAt: string | null;
+    daysLeft: number | null;
+    hasPriceDrop: boolean;
+    priceDifference: number | null;
+    lastCheckedHours: number | null;
+  }>>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = React.useState(false);
+  const [productError, setProductError] = React.useState<string | null>(null);
+  
+  // Form state for adding products
+  const [productForm, setProductForm] = React.useState({
+    productName: "",
+    productId: "",
+    purchasePrice: "",
+    purchaseDate: "",
+    category: "",
+    receiptFile: null as File | null,
+  });
+  const [isSubmittingProduct, setIsSubmittingProduct] = React.useState(false);
   
   // Subscription state
   const [subscriptionData, setSubscriptionData] = React.useState<{
@@ -212,10 +211,97 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
   }, [userEmail]);
 
   // Fetch subscription data on mount and when userData changes
+  // Fetch products from API
+  const fetchProducts = React.useCallback(async () => {
+    if (!userEmail) return;
+    
+    setIsLoadingProducts(true);
+    setProductError(null);
+    try {
+      const response = await fetch(API_ENDPOINTS.products.list(userEmail));
+      if (response.ok) {
+        const data = await response.json();
+        setMonitoredProducts(data.products || []);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setProductError(errorData.error || "Failed to load products");
+      }
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      setProductError("Failed to load products. Please try again.");
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }, [userEmail]);
+
+  // Handle product form submission
+  const handleAddProduct = React.useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userEmail) {
+      setProductError("User email is required");
+      return;
+    }
+
+    if (!productForm.productName.trim() || !productForm.productId.trim()) {
+      setProductError("Product name and Product ID are required");
+      return;
+    }
+
+    setIsSubmittingProduct(true);
+    setProductError(null);
+
+    try {
+      // TODO: Handle file upload for receipt (upload to S3 or similar service)
+      // For now, we'll skip receipt URL
+      const receiptUrl = null; // Will be implemented later with file upload service
+
+      const payload = {
+        email: userEmail,
+        productName: productForm.productName.trim(),
+        productId: productForm.productId.trim(),
+        purchasePrice: productForm.purchasePrice ? parseFloat(productForm.purchasePrice) : null,
+        purchaseDate: productForm.purchaseDate || null,
+        category: productForm.category || null,
+        receiptUrl: receiptUrl,
+      };
+
+      const response = await fetch(API_ENDPOINTS.products.create(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        const newProduct = await response.json();
+        setMonitoredProducts(prev => [newProduct, ...prev]);
+        // Reset form
+        setProductForm({
+          productName: "",
+          productId: "",
+          purchasePrice: "",
+          purchaseDate: "",
+          category: "",
+          receiptFile: null,
+        });
+        setIsAddProductOpen(false);
+        setProductError(null);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setProductError(errorData.error || "Failed to add product");
+      }
+    } catch (error) {
+      console.error("Error adding product:", error);
+      setProductError("Failed to add product. Please try again.");
+    } finally {
+      setIsSubmittingProduct(false);
+    }
+  }, [userEmail, productForm]);
+
   React.useEffect(() => {
     fetchSubscriptionData();
     fetchBillingHistory();
-  }, [fetchSubscriptionData, fetchBillingHistory]);
+    fetchProducts();
+  }, [fetchSubscriptionData, fetchBillingHistory, fetchProducts]);
 
   // Handle cancel subscription
   const handleCancelSubscription = React.useCallback(async (cancelImmediately: boolean = false) => {
@@ -733,71 +819,124 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                           </Card>
                         )}
 
-                        <div>
-                          <Label htmlFor="productName">Product Name</Label>
-                          <Input id="productName" placeholder="e.g., Samsung 65 inch TV" />
-                          <p className="text-xs text-gray-500 mt-1">Enter the exact name as shown on Costco.com</p>
-                        </div>
-
-                        <div>
-                          <Label htmlFor="productId">
-                            Product ID (Item Number)
-                            <HelpCircle 
-                              className="inline h-3 w-3 ml-1 text-gray-400 cursor-pointer" 
-                              onClick={() => setShowProductIdHelp(!showProductIdHelp)}
+                        <form onSubmit={handleAddProduct} className="space-y-4">
+                          {productError && (
+                            <Alert variant="destructive">
+                              <AlertDescription>{productError}</AlertDescription>
+                            </Alert>
+                          )}
+                          
+                          <div>
+                            <Label htmlFor="productName">Product Name *</Label>
+                            <Input 
+                              id="productName" 
+                              placeholder="e.g., Samsung 65 inch TV" 
+                              value={productForm.productName}
+                              onChange={(e) => setProductForm(prev => ({ ...prev, productName: e.target.value }))}
+                              required
                             />
-                          </Label>
-                          <Input id="productId" placeholder="e.g., 123456" />
-                          <p className="text-xs text-gray-500 mt-1">This helps us track the exact product you purchased</p>
-                        </div>
+                            <p className="text-xs text-gray-500 mt-1">Enter the exact name as shown on Costco.com</p>
+                          </div>
 
-                        <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <Label htmlFor="purchasePrice">Purchase Price</Label>
-                            <Input id="purchasePrice" type="number" placeholder="899.99" step="0.01" />
-                            <p className="text-xs text-gray-500 mt-1">The price you paid (check your receipt)</p>
+                            <Label htmlFor="productId">
+                              Product ID (Item Number) *
+                              <HelpCircle 
+                                className="inline h-3 w-3 ml-1 text-gray-400 cursor-pointer" 
+                                onClick={() => setShowProductIdHelp(!showProductIdHelp)}
+                              />
+                            </Label>
+                            <Input 
+                              id="productId" 
+                              placeholder="e.g., 123456" 
+                              value={productForm.productId}
+                              onChange={(e) => setProductForm(prev => ({ ...prev, productId: e.target.value }))}
+                              required
+                            />
+                            <p className="text-xs text-gray-500 mt-1">This helps us track the exact product you purchased</p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <Label htmlFor="purchasePrice">Purchase Price (Optional)</Label>
+                              <Input 
+                                id="purchasePrice" 
+                                type="number" 
+                                placeholder="899.99" 
+                                step="0.01"
+                                value={productForm.purchasePrice}
+                                onChange={(e) => setProductForm(prev => ({ ...prev, purchasePrice: e.target.value }))}
+                              />
+                              <p className="text-xs text-gray-500 mt-1">The price you paid (check your receipt)</p>
+                            </div>
+                            <div>
+                              <Label htmlFor="purchaseDate">Purchase Date (Optional)</Label>
+                              <Input 
+                                id="purchaseDate" 
+                                type="date" 
+                                value={productForm.purchaseDate}
+                                onChange={(e) => setProductForm(prev => ({ ...prev, purchaseDate: e.target.value }))}
+                              />
+                              <p className="text-xs text-gray-500 mt-1">When you bought the item</p>
+                            </div>
                           </div>
                           <div>
-                            <Label htmlFor="purchaseDate">Purchase Date</Label>
-                            <Input id="purchaseDate" type="date" />
-                            <p className="text-xs text-gray-500 mt-1">When you bought the item</p>
+                            <Label htmlFor="category">Category (Optional)</Label>
+                            <Select 
+                              value={productForm.category}
+                              onValueChange={(value) => setProductForm(prev => ({ ...prev, category: value }))}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select category" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="electronics">Electronics</SelectItem>
+                                <SelectItem value="groceries">Groceries</SelectItem>
+                                <SelectItem value="home">Home & Garden</SelectItem>
+                                <SelectItem value="clothing">Clothing</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-gray-500 mt-1">This helps organize your products</p>
                           </div>
-                        </div>
-                        <div>
-                          <Label htmlFor="category">Category</Label>
-                          <Select>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="electronics">Electronics</SelectItem>
-                              <SelectItem value="groceries">Groceries</SelectItem>
-                              <SelectItem value="home">Home & Garden</SelectItem>
-                              <SelectItem value="clothing">Clothing</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-gray-500 mt-1">This helps organize your products</p>
-                        </div>
-                        <div>
-                          <Label htmlFor="receiptUpload">Upload Receipt (Optional)</Label>
-                          <Input id="receiptUpload" type="file" accept="image/*" />
-                          <p className="text-xs text-gray-500 mt-1">Take a clear photo of your receipt - we'll extract the details automatically</p>
-                        </div>
-                        <div className="flex space-x-3 pt-4">
-                          <Button 
-                            className="flex-1 bg-[#E91E8C] hover:bg-[#D11A7C]"
-                            onClick={() => setIsAddProductOpen(false)}
-                          >
-                            Start Monitoring
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="flex-1"
-                            onClick={() => setIsAddProductOpen(false)}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
+                          <div>
+                            <Label htmlFor="receiptUpload">Upload Receipt (Optional)</Label>
+                            <Input 
+                              id="receiptUpload" 
+                              type="file" 
+                              accept="image/*"
+                              onChange={(e) => setProductForm(prev => ({ ...prev, receiptFile: e.target.files?.[0] || null }))}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Take a clear photo of your receipt - we'll extract the details automatically (file upload coming soon)</p>
+                          </div>
+                          <div className="flex space-x-3 pt-4">
+                            <Button 
+                              type="submit"
+                              className="flex-1 bg-[#E91E8C] hover:bg-[#D11A7C]"
+                              disabled={isSubmittingProduct}
+                            >
+                              {isSubmittingProduct ? "Adding..." : "Start Monitoring"}
+                            </Button>
+                            <Button 
+                              type="button"
+                              variant="outline" 
+                              className="flex-1"
+                              onClick={() => {
+                                setIsAddProductOpen(false);
+                                setProductForm({
+                                  productName: "",
+                                  productId: "",
+                                  purchasePrice: "",
+                                  purchaseDate: "",
+                                  category: "",
+                                  receiptFile: null,
+                                });
+                                setProductError(null);
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </form>
                       </div>
                     </DialogContent>
                   </Dialog>
@@ -831,193 +970,212 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {monitoredProducts.map((product) => (
-                        <TableRow key={product.id}>
-                          <TableCell>
-                            <div>
-                              <p className="text-gray-700">{product.name}</p>
-                              <p className="text-sm text-gray-500">Purchased {product.purchaseDate}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>${product.originalPrice}</TableCell>
-                          <TableCell>
-                            <span className={product.currentPrice < product.originalPrice ? "text-green-600 font-medium" : ""}>
-                              ${product.currentPrice}
-                              {product.currentPrice < product.originalPrice && (
-                                <span className="text-xs block">↓ Lower!</span>
-                              )}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={product.daysRemaining < 10 ? "destructive" : "outline"}>
-                              {product.daysRemaining} days
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {product.status === "price-drop" ? (
-                              <Badge className="bg-green-600">
-                                💰 Price Drop! ${product.potentialSavings}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline">👀 Monitoring</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm text-gray-500">{product.lastChecked}</span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center space-x-2">
-                              {product.status === "price-drop" && (
-                                <Dialog>
-                                  <DialogTrigger asChild>
-                                    <Button 
-                                      size="sm" 
-                                      className="bg-green-600 hover:bg-green-700"
-                                    >
-                                      <DollarSignIcon className="h-4 w-4 mr-1" />
-                                      Claim
-                                    </Button>
-                                  </DialogTrigger>
-                                  <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-                                    <DialogHeader>
-                                      <DialogTitle>How to Claim Your ${product.potentialSavings} Refund</DialogTitle>
-                                      <DialogDescription>
-                                        Follow these simple steps to get your money back from Costco
-                                      </DialogDescription>
-                                    </DialogHeader>
-                                    <div className="space-y-6 py-4">
-                                      {/* Video Placeholder */}
-                                      <div className="relative border rounded-lg overflow-hidden bg-gray-100">
-                                        <ImageWithFallback
-                                          src="https://images.unsplash.com/photo-1551817958-c5b51e7b4a33?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx2aWRlbyUyMHBsYXklMjB0dXRvcmlhbHxlbnwxfHx8fDE3NjAzODgxNzl8MA&ixlib=rb-4.1.0&q=80&w=1080"
-                                          alt="Video tutorial"
-                                          className="w-full h-64 object-cover"
-                                        />
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
-                                          <div className="text-center">
-                                            <Play className="h-16 w-16 text-white mx-auto mb-2" />
-                                            <p className="text-white text-sm">Watch Tutorial (2:30)</p>
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      <Alert className="bg-green-50 border-green-200">
-                                        <CheckCircle2 className="h-4 w-4 text-green-600" />
-                                        <AlertDescription className="text-sm text-green-900">
-                                          <strong>Good news!</strong> We found that {product.name} dropped from ${product.originalPrice} to ${product.currentPrice}. 
-                                          You can get ${product.potentialSavings} back!
-                                        </AlertDescription>
-                                      </Alert>
-
-                                      {/* Step by Step Guide */}
-                                      <Card>
-                                        <CardHeader>
-                                          <CardTitle className="text-lg">Step-by-Step Instructions</CardTitle>
-                                        </CardHeader>
-                                        <CardContent className="space-y-4">
-                                          <div className="flex items-start space-x-3">
-                                            <div className="flex-shrink-0 w-8 h-8 bg-[#E91E8C] text-white rounded-full flex items-center justify-center">
-                                              1
-                                            </div>
-                                            <div className="flex-1">
-                                              <p className="text-sm font-medium">Go to Costco.com or your local warehouse</p>
-                                              <p className="text-xs text-gray-600 mt-1">You can claim refunds online or in person at customer service</p>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex items-start space-x-3">
-                                            <div className="flex-shrink-0 w-8 h-8 bg-[#E91E8C] text-white rounded-full flex items-center justify-center">
-                                              2
-                                            </div>
-                                            <div className="flex-1">
-                                              <p className="text-sm font-medium">Have your receipt ready</p>
-                                              <p className="text-xs text-gray-600 mt-1">You'll need to show proof of purchase (original receipt or order number)</p>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex items-start space-x-3">
-                                            <div className="flex-shrink-0 w-8 h-8 bg-[#E91E8C] text-white rounded-full flex items-center justify-center">
-                                              3
-                                            </div>
-                                            <div className="flex-1">
-                                              <p className="text-sm font-medium">Tell them you want a price adjustment</p>
-                                              <p className="text-xs text-gray-600 mt-1">Say: "I'd like to request a price adjustment for this item that dropped in price"</p>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex items-start space-x-3">
-                                            <div className="flex-shrink-0 w-8 h-8 bg-[#E91E8C] text-white rounded-full flex items-center justify-center">
-                                              4
-                                            </div>
-                                            <div className="flex-1">
-                                              <p className="text-sm font-medium">Get your money back!</p>
-                                              <p className="text-xs text-gray-600 mt-1">
-                                                Costco will refund the difference (${product.potentialSavings}) to your original payment method
-                                              </p>
-                                            </div>
-                                          </div>
-                                        </CardContent>
-                                      </Card>
-
-                                      {/* Screenshot Examples */}
-                                      <Card>
-                                        <CardHeader>
-                                          <CardTitle className="text-lg">What to Bring</CardTitle>
-                                        </CardHeader>
-                                        <CardContent className="space-y-3">
-                                          <div className="grid md:grid-cols-2 gap-4">
-                                            <div className="border rounded-lg overflow-hidden">
-                                              <ImageWithFallback
-                                                src="https://images.unsplash.com/photo-1624641454171-586000f5cbe0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9kdWN0JTIwYmFyY29kZSUyMG51bWJlcnxlbnwxfHx8fDE3NjAzODgxNzh8MA&ixlib=rb-4.1.0&q=80&w=1080"
-                                                alt="Receipt example"
-                                                className="w-full h-32 object-cover"
-                                              />
-                                              <div className="bg-gray-100 p-2 text-center text-xs">
-                                                Your original receipt
-                                              </div>
-                                            </div>
-                                            <div className="border rounded-lg overflow-hidden">
-                                              <ImageWithFallback
-                                                src="https://images.unsplash.com/photo-1600492515568-8868f609511e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxzdGVwJTIwYnklMjBzdGVwJTIwZ3VpZGV8ZW58MXx8fHwxNzYwMzQ3ODY2fDA&ixlib=rb-4.1.0&q=80&w=1080"
-                                                alt="Product details"
-                                                className="w-full h-32 object-cover"
-                                              />
-                                              <div className="bg-gray-100 p-2 text-center text-xs">
-                                                Show the new lower price
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </CardContent>
-                                      </Card>
-
-                                      <div className="flex space-x-3 pt-4">
-                                        <Button 
-                                          className="flex-1 bg-green-600 hover:bg-green-700"
-                                          onClick={() => alert(`Great! Mark as claimed for ${product.name}`)}
-                                        >
-                                          I've Claimed This Refund
-                                        </Button>
-                                        <Button 
-                                          variant="outline" 
-                                          className="flex-1"
-                                        >
-                                          Remind Me Later
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </DialogContent>
-                                </Dialog>
-                              )}
-                              <Button variant="ghost" size="icon" title="View details">
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" title="Stop tracking this product">
-                                <Trash2 className="h-4 w-4 text-red-600" />
-                              </Button>
-                            </div>
+                      {isLoadingProducts ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8">
+                            <p className="text-gray-500">Loading products...</p>
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : monitoredProducts.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8">
+                            <p className="text-gray-500">No products being monitored yet. Add your first product to get started!</p>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        monitoredProducts.map((product) => {
+                          return (
+                            <TableRow key={product.id}>
+                              <TableCell>
+                                <div>
+                                  <p className="text-gray-700 font-medium">{product.productName}</p>
+                                  <p className="text-sm text-gray-500">
+                                    ID: {product.productId}
+                                    {product.purchaseDate && ` • ${new Date(product.purchaseDate).toLocaleDateString()}`}
+                                    {product.category && ` • ${product.category}`}
+                                  </p>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {product.purchasePrice !== null && product.purchasePrice !== undefined ? `$${Number(product.purchasePrice).toFixed(2)}` : "—"}
+                              </TableCell>
+                              <TableCell>
+                                {product.currentPrice !== null && product.currentPrice !== undefined ? (
+                                  <div className="flex items-center space-x-2">
+                                    <span className={product.hasPriceDrop ? "text-green-600 font-medium" : "text-gray-600"}>
+                                      ${Number(product.currentPrice).toFixed(2)}
+                                    </span>
+                                    {product.hasPriceDrop && (
+                                      <Badge className="bg-green-600 text-white">Lower</Badge>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-500">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {product.daysLeft !== null ? (
+                                  <Badge variant={product.daysLeft < 10 ? "destructive" : "outline"}>
+                                    {product.daysLeft} days
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline">—</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {product.hasPriceDrop && product.priceDifference !== null && product.priceDifference !== undefined ? (
+                                  <Badge className="bg-green-600 text-white">
+                                    💰 Price Drop! ${Number(product.priceDifference).toFixed(2)}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline">👀 Monitoring</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {product.lastCheckedHours !== null ? (
+                                  <span className="text-sm text-gray-500">
+                                    {product.lastCheckedHours < 1 
+                                      ? `${Math.round(product.lastCheckedHours * 60)} mins ago`
+                                      : product.lastCheckedHours < 24
+                                      ? `${product.lastCheckedHours.toFixed(1)} hrs ago`
+                                      : `${Math.round(product.lastCheckedHours / 24)} days ago`
+                                    }
+                                  </span>
+                                ) : (
+                                  <span className="text-sm text-gray-400">Never</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center space-x-2">
+                                  {product.hasPriceDrop && (
+                                    <Dialog>
+                                      <DialogTrigger asChild>
+                                        <Button 
+                                          size="sm" 
+                                          className="bg-green-600 hover:bg-green-700 text-white"
+                                        >
+                                          <DollarSignIcon className="h-4 w-4 mr-1" />
+                                          Claim
+                                        </Button>
+                                      </DialogTrigger>
+                                      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                                        <DialogHeader>
+                                          <DialogTitle>How to Claim Your ${product.priceDifference ? Number(product.priceDifference).toFixed(2) : '0.00'} Refund</DialogTitle>
+                                          <DialogDescription>
+                                            Follow these simple steps to get your money back from Costco
+                                          </DialogDescription>
+                                        </DialogHeader>
+                                        <div className="space-y-6 py-4">
+                                          <Alert className="bg-green-50 border-green-200">
+                                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                            <AlertDescription className="text-sm text-green-900">
+                                              <strong>Good news!</strong> We found that {product.productName} dropped from ${product.purchasePrice ? Number(product.purchasePrice).toFixed(2) : '0.00'} to ${product.currentPrice ? Number(product.currentPrice).toFixed(2) : '0.00'}. 
+                                              You can get ${product.priceDifference ? Number(product.priceDifference).toFixed(2) : '0.00'} back!
+                                            </AlertDescription>
+                                          </Alert>
+                                          
+                                          <Card>
+                                            <CardHeader>
+                                              <CardTitle className="text-lg">Step-by-Step Instructions</CardTitle>
+                                            </CardHeader>
+                                            <CardContent className="space-y-4">
+                                              <div className="flex items-start space-x-3">
+                                                <div className="flex-shrink-0 w-8 h-8 bg-[#E91E8C] text-white rounded-full flex items-center justify-center">
+                                                  1
+                                                </div>
+                                                <div className="flex-1">
+                                                  <p className="text-sm font-medium">Go to Costco.com or your local warehouse</p>
+                                                  <p className="text-xs text-gray-600 mt-1">You can claim refunds online or in person at customer service</p>
+                                                </div>
+                                              </div>
+                                              <div className="flex items-start space-x-3">
+                                                <div className="flex-shrink-0 w-8 h-8 bg-[#E91E8C] text-white rounded-full flex items-center justify-center">
+                                                  2
+                                                </div>
+                                                <div className="flex-1">
+                                                  <p className="text-sm font-medium">Have your receipt ready</p>
+                                                  <p className="text-xs text-gray-600 mt-1">You'll need to show proof of purchase (original receipt or order number)</p>
+                                                </div>
+                                              </div>
+                                              <div className="flex items-start space-x-3">
+                                                <div className="flex-shrink-0 w-8 h-8 bg-[#E91E8C] text-white rounded-full flex items-center justify-center">
+                                                  3
+                                                </div>
+                                                <div className="flex-1">
+                                                  <p className="text-sm font-medium">Tell them you want a price adjustment</p>
+                                                  <p className="text-xs text-gray-600 mt-1">Say: "I'd like to request a price adjustment for this item that dropped in price"</p>
+                                                </div>
+                                              </div>
+                                              <div className="flex items-start space-x-3">
+                                                <div className="flex-shrink-0 w-8 h-8 bg-[#E91E8C] text-white rounded-full flex items-center justify-center">
+                                                  4
+                                                </div>
+                                                <div className="flex-1">
+                                                  <p className="text-sm font-medium">Get your money back!</p>
+                                                  <p className="text-xs text-gray-600 mt-1">
+                                                    Costco will refund the difference (${product.priceDifference ? Number(product.priceDifference).toFixed(2) : '0.00'}) to your original payment method
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            </CardContent>
+                                          </Card>
+                                          
+                                          <div className="flex space-x-3 pt-4">
+                                            <Button 
+                                              className="flex-1 bg-green-600 hover:bg-green-700"
+                                              onClick={() => {
+                                                alert(`Great! Marked "${product.productName}" as claimed.`);
+                                                // TODO: Update product status in database
+                                              }}
+                                            >
+                                              I've Claimed This Refund
+                                            </Button>
+                                            <Button 
+                                              variant="outline" 
+                                              className="flex-1"
+                                              onClick={() => {
+                                                // Close dialog
+                                                const dialog = document.querySelector('[role="dialog"]');
+                                                if (dialog) {
+                                                  (dialog as HTMLElement).style.display = 'none';
+                                                }
+                                              }}
+                                            >
+                                              Remind Me Later
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </DialogContent>
+                                    </Dialog>
+                                  )}
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={async () => {
+                                      if (confirm(`Are you sure you want to remove "${product.productName}" from monitoring?`)) {
+                                        try {
+                                          const response = await fetch(API_ENDPOINTS.products.delete(product.id, userEmail));
+                                          if (response.ok || response.status === 204) {
+                                            setMonitoredProducts(prev => prev.filter(p => p.id !== product.id));
+                                          } else {
+                                            const errorData = await response.json().catch(() => ({}));
+                                            alert(errorData.error || "Failed to delete product");
+                                          }
+                                        } catch (error) {
+                                          console.error("Error deleting product:", error);
+                                          alert("Failed to delete product. Please try again.");
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -1140,13 +1298,13 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
               </AlertDescription>
             </Alert>
 
-            {/* Billing & Payment Methods - Side by Side */}
-            <div className="grid md:grid-cols-2 gap-6">
+            {/* Billing & Payment Methods */}
+            <div className="space-y-6">
               {/* Current Payment Method Card */}
               <Card>
                 <CardHeader>
                   <CardTitle>Current Payment Method</CardTitle>
-                  <CardDescription>Your saved card for subscription payments</CardDescription>
+                  <CardDescription>Your saved payment method for subscription payments</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {subscriptionData?.cardLast4 ? (
@@ -1170,30 +1328,78 @@ export function Dashboard({ onLogout, userData }: DashboardProps) {
                   ) : (
                     <div className="p-4 border rounded-lg bg-yellow-50 border-yellow-200">
                       <p className="text-sm text-gray-700">
-                        No payment method on file. Please add a card using the form on the right.
+                        No payment method on file. Please add a payment method below.
                       </p>
                     </div>
                   )}
                 </CardContent>
               </Card>
 
-              {/* Add/Update Card Form */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Add or Update Card</CardTitle>
-                  <CardDescription>Use Stripe to securely save your payment method</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <BillingCardForm
-                    email={userEmail}
-                    plan={subscriptionData?.plan || userData?.plan}
-                    onCompleted={() => {
-                      // Refresh subscription data after card is saved
-                      fetchSubscriptionData();
-                    }}
-                  />
-                </CardContent>
-              </Card>
+              {/* Payment Method Options */}
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Credit Card Option */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Credit Card</CardTitle>
+                    <CardDescription>Use Stripe to securely save your payment method</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                      <p className="text-xs text-amber-900">
+                        <strong>Credit Card Processing Fee:</strong> We charge a processing fee of 30¢ + 2.9% of the transaction amount for credit card payments.
+                      </p>
+                    </div>
+                    <BillingCardForm
+                      email={userEmail}
+                      plan={subscriptionData?.plan || userData?.plan}
+                      onCompleted={() => {
+                        // Refresh subscription data after card is saved
+                        fetchSubscriptionData();
+                      }}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* PayPal Option */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>PayPal</CardTitle>
+                    <CardDescription>Pay securely with PayPal</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {userEmail ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-gray-600">
+                          Use PayPal to make one-time payments or set up a subscription. Your PayPal account will be securely linked to your PriceGuard account.
+                        </p>
+                        <PayPalButton
+                          email={userEmail}
+                          amount={subscriptionData?.plan === "basic" ? 0.45 : subscriptionData?.plan === "intermediate" ? 1.99 : subscriptionData?.plan === "premium" ? 2.99 : 9.99}
+                          currency="USD"
+                          description={`PriceGuard ${subscriptionData?.plan || "subscription"} payment`}
+                          onCompleted={() => {
+                            alert("PayPal payment completed! Your account will be updated shortly.");
+                            // Refresh subscription data
+                            fetchSubscriptionData();
+                          }}
+                          onError={(error) => {
+                            console.error("PayPal payment error:", error);
+                          }}
+                        />
+                        <p className="text-xs text-gray-500">
+                          💡 You can also use PayPal for one-time payments or recurring subscriptions.
+                        </p>
+                      </div>
+                    ) : (
+                      <Alert>
+                        <AlertDescription>
+                          Please ensure you're logged in to use PayPal payment.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </div>
 
             {/* Account Information */}

@@ -87,6 +87,12 @@ export function LoginSection({ onSubmit, submitLabel = 'Start 14-day trial' }: L
                 <PaymentLogos />
               </div>
 
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <p className="text-xs text-amber-900">
+                  <strong>Credit Card Processing Fee:</strong> We charge a processing fee of 30¢ + 2.9% of the transaction amount for credit card payments.
+                </p>
+              </div>
+
               <div className="space-y-4">
                 <div className="relative">
                   <Input

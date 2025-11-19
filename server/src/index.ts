@@ -9,6 +9,9 @@ import { authRouter } from "./routes/auth.js";
 import { pool } from "./db.js";
 import { billingRouter } from "./routes/billing.js";
 import { stripeWebhookHandler } from "./routes/stripeWebhook.js";
+import { productsRouter } from "./routes/products.js";
+import { paypalRouter } from "./routes/paypal.js";
+import { paypalWebhookHandler } from "./routes/paypalWebhook.js";
 
 // Load .env file from server directory (must be loaded before reading process.env)
 const __filename = fileURLToPath(import.meta.url);
@@ -51,14 +54,23 @@ async function bootstrap() {
 
   const app = express();
   
-  // Stripe webhook endpoint:
-  // - Must be defined BEFORE express.json middleware so we can use express.raw
-  // - Uses Stripe's signature verification to ensure integrity
-  app.post(
-    "/api/stripe/webhook",
-    express.raw({ type: "application/json" }),
-    stripeWebhookHandler
-  );
+      // Stripe webhook endpoint:
+      // - Must be defined BEFORE express.json middleware so we can use express.raw
+      // - Uses Stripe's signature verification to ensure integrity
+      app.post(
+        "/api/stripe/webhook",
+        express.raw({ type: "application/json" }),
+        stripeWebhookHandler
+      );
+
+      // PayPal webhook endpoint:
+      // - Must be defined BEFORE express.json middleware so we can use express.raw
+      // - Uses PayPal's signature verification to ensure integrity
+      app.post(
+        "/api/paypal/webhook",
+        express.raw({ type: "application/json" }),
+        paypalWebhookHandler
+      );
 
   // Health check endpoint (before CORS and middleware - accessible to load balancers)
   // This endpoint MUST return 200 OK quickly for ECS health checks to pass
@@ -192,9 +204,13 @@ async function bootstrap() {
   // JSON body parser for standard API routes (not Stripe webhooks)
   app.use(express.json());
 
-  // Billing routes (Stripe SetupIntent, subscription status, etc.)
-  app.use("/api/billing", billingRouter);
-  app.use("/api/auth", authRouter);
+      // Billing routes (Stripe SetupIntent, subscription status, etc.)
+      app.use("/api/billing", billingRouter);
+      // PayPal routes (orders, subscriptions, etc.)
+      app.use("/api/paypal", paypalRouter);
+      // Products routes (monitored products)
+      app.use("/api/products", productsRouter);
+      app.use("/api/auth", authRouter);
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err);

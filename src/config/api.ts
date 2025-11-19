@@ -79,5 +79,20 @@ export const API_ENDPOINTS = {
     billingHistory: (email: string) =>
       apiEndpoint(`/api/billing/billing-history?email=${encodeURIComponent(email)}`),
   },
-  health: () => apiEndpoint('/health'),
-} as const;
+      products: {
+        list: (email: string) =>
+          apiEndpoint(`/api/products?email=${encodeURIComponent(email)}`),
+        create: () => apiEndpoint('/api/products'),
+        update: (id: string) => apiEndpoint(`/api/products/${id}`),
+        delete: (id: string, email: string) =>
+          apiEndpoint(`/api/products/${id}?email=${encodeURIComponent(email)}`),
+      },
+      paypal: {
+        createOrder: () => apiEndpoint('/api/paypal/create-order'),
+        captureOrder: () => apiEndpoint('/api/paypal/capture-order'),
+        createSubscription: () => apiEndpoint('/api/paypal/create-subscription'),
+        getSubscription: (id: string) => apiEndpoint(`/api/paypal/subscription/${id}`),
+        cancelSubscription: () => apiEndpoint('/api/paypal/cancel-subscription'),
+      },
+      health: () => apiEndpoint('/health'),
+    } as const;
